@@ -1,11 +1,15 @@
 /* Buscaminas a dos — gana quien encuentre más minas.
    Si destapas una mina, te la quedas y sigues; si no, pasa el turno. */
-import { turnGame, turnText, turnClass, el, clear, beep, vibrate, rngInt } from './lib/kit.js';
+import { turnGame, turnText, turnClass, el, clear, beep, vibrate, rngInt,
+         sfxPop, sfxCapture, chord } from './lib/kit.js';
 
 const W = 10, H = 10, MINES = 15, TARGET = 8;
 const ix = (x, y) => y * W + x;
 
-export default (ctx) => turnGame(ctx, {
+export default (ctx) => {
+  let abiertas = -1, minas = -1;
+
+  return turnGame(ctx, {
   init(c, P){
     const mine = Array(W * H).fill(false);
     let placed = 0;
@@ -69,14 +73,22 @@ export default (ctx) => turnGame(ctx, {
     const P = api.P;
     ui.status(turnText(P, v.turn, `${v.score[P.me]} — ${v.score[P.them]} · meta ${TARGET}`), turnClass(P, v.turn));
 
+    /* sonido según lo que acaba de pasar, para los dos */
+    const nAbiertas = v.cells.filter(Boolean).length;
+    const nMinas = v.score[P.me] + v.score[P.them];
+    const nuevas = abiertas >= 0 ? nAbiertas - abiertas : 0;
+    if(minas >= 0 && nMinas > minas){ sfxCapture(); vibrate([30, 50, 30]); }
+    else if(nuevas > 0){ sfxPop(); vibrate(10); }
+    const recien = abiertas >= 0 && nuevas > 0;
+    abiertas = nAbiertas; minas = nMinas;
+
     const board = el('div', { class:'bd bd-ms' });
     v.cells.forEach((cell, i) => {
       const node = el('button', {
-        class:'ms-cell' + (cell ? ' open' : '') + (cell?.m ? ' mine' : ''),
+        class:'ms-cell' + (cell ? ' open' : '') + (cell?.m ? ' mine' : '') + (recien && cell ? ' revealed' : ''),
         style: cell?.m ? { background:P.color(cell.m) } : {},
         onclick: () => {
           if(cell || !P.isMe(v.turn)) return;
-          beep(520, .04); vibrate(12);
           api.act({ i });
         },
       });
@@ -89,4 +101,5 @@ export default (ctx) => turnGame(ctx, {
     clear(ui.actions).append(el('div', { class:'g-pill', html:
       `<span style="color:${P.color(P.me)}">💣</span> ${v.score[P.me]} · <span style="color:${P.color(P.them)}">💣</span> ${v.score[P.them]}` }));
   },
-});
+  });
+};

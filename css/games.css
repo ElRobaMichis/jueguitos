@@ -32,6 +32,21 @@
   box-shadow:inset 0 -4px 8px rgba(0,0,0,.35), 0 2px 6px rgba(0,0,0,.4);
   animation:popIn .25s var(--ease);
 }
+/* la ficha cae desde arriba hasta su hueco y rebota un poquito */
+.bd .disc.dropping{animation:discDrop .42s cubic-bezier(.34,.9,.5,1.25)}
+@keyframes discDrop{
+  0%{transform:translateY(var(--fall,-300%)) scale(.92)}
+  72%{transform:translateY(0) scale(1)}
+  84%{transform:translateY(-9%) scale(1.02,.96)}
+  100%{transform:translateY(0) scale(1)}
+}
+/* voltear una ficha capturada (reversi) */
+.bd .disc.flipping{animation:discFlip .34s ease-out backwards}
+@keyframes discFlip{
+  0%{transform:rotateY(0) scale(1);filter:brightness(1)}
+  50%{transform:rotateY(90deg) scale(.85);filter:brightness(2)}
+  100%{transform:rotateY(0) scale(1);filter:brightness(1)}
+}
 
 /* gato */
 .bd-gato{grid-template-columns:repeat(3,1fr);aspect-ratio:1;gap:8px;width:min(84vw,340px)}
@@ -108,17 +123,33 @@
 .sl-tok.foe{transform:translate(-24%,-24%)}
 .sl-tok.sliding{transition:left .8s cubic-bezier(.45,0,.3,1), top .8s cubic-bezier(.45,0,.3,1)}
 
-/* memorama */
-.bd-mem{grid-template-columns:repeat(4,1fr);aspect-ratio:4/5;gap:7px;width:min(84vw,340px)}
+/* memorama — volteo 3D de verdad */
+.bd-mem{grid-template-columns:repeat(4,1fr);aspect-ratio:4/5;gap:7px;width:min(84vw,340px);perspective:900px}
 .mem-card{
-  border:2px solid var(--line);background:rgba(255,255,255,.07);border-radius:13px;
-  cursor:pointer;display:grid;place-items:center;
-  transition:transform .2s var(--ease),background .2s;
+  border:0;background:transparent;padding:0;cursor:pointer;
+  border-radius:13px;
 }
-.mem-card:active{transform:scale(.93)}
-.mem-card.up{background:rgba(255,255,255,.16);transform:rotateY(0)}
-.mem-card.done{opacity:.85}
-.mem-face{font-size:min(7vw,27px)}
+.mem-card:active .mem-inner{transform:scale(.93)}
+.mem-inner{
+  position:relative;width:100%;height:100%;
+  transform-style:preserve-3d;
+  transition:transform .42s cubic-bezier(.4,.9,.4,1.2);
+}
+.mem-card.up .mem-inner{transform:rotateY(180deg)}
+.mem-dorso,.mem-cara{
+  position:absolute;inset:0;border-radius:13px;
+  display:grid;place-items:center;font-size:min(7vw,27px);
+  backface-visibility:hidden;-webkit-backface-visibility:hidden;
+  border:2px solid var(--line);
+}
+.mem-dorso{background:linear-gradient(145deg,rgba(139,92,246,.35),rgba(255,79,154,.25))}
+.mem-cara{background:rgba(255,255,255,.16);transform:rotateY(180deg)}
+.mem-card.done .mem-cara{border-color:currentColor;animation:memMatch .5s var(--ease)}
+@keyframes memMatch{
+  0%{transform:rotateY(180deg) scale(1)}
+  45%{transform:rotateY(180deg) scale(1.14)}
+  100%{transform:rotateY(180deg) scale(1)}
+}
 
 /* buscaminas */
 .bd-ms{grid-template-columns:repeat(10,1fr);aspect-ratio:1;gap:2px;width:min(94vw,420px)}
@@ -129,7 +160,15 @@
 }
 .ms-cell:active{background:rgba(255,255,255,.25)}
 .ms-cell.open{background:rgba(0,0,0,.32);cursor:default}
-.ms-cell.mine{font-size:min(3.4vw,15px);animation:popIn .3s var(--ease)}
+.ms-cell.mine{font-size:min(3.4vw,15px)}
+.ms-cell.revealed{animation:msOpen .3s ease-out}
+@keyframes msOpen{0%{transform:scale(.55);opacity:.2}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+.ms-cell.mine.revealed{animation:msBoom .5s var(--ease)}
+@keyframes msBoom{
+  0%{transform:scale(.4) rotate(-25deg)}
+  45%{transform:scale(1.45) rotate(12deg)}
+  100%{transform:scale(1) rotate(0)}
+}
 .ms-cell[data-n="1"]{color:#7dd3fc}.ms-cell[data-n="2"]{color:#a3e635}
 .ms-cell[data-n="3"]{color:#fca5a5}.ms-cell[data-n="4"]{color:#c4b5fd}
 .ms-cell[data-n="5"]{color:#fdba74}.ms-cell[data-n="6"]{color:#5eead4}
@@ -148,6 +187,19 @@
 .bn-cell.miss{background:rgba(0,0,0,.35)}
 .bn-cell.hit{background:rgba(244,63,94,.55)}
 .bn-cell.sunk{background:rgba(244,63,94,.85)}
+.bn-cell.boom{animation:bnBoom .55s var(--ease);z-index:2}
+@keyframes bnBoom{
+  0%{transform:scale(.5);filter:brightness(3)}
+  40%{transform:scale(1.5);filter:brightness(2)}
+  70%{transform:scale(.94)}
+  100%{transform:scale(1);filter:brightness(1)}
+}
+.bn-cell.miss.boom{animation:bnSplash .5s ease-out}
+@keyframes bnSplash{
+  0%{transform:scale(.3);opacity:.3}
+  55%{transform:scale(1.25);opacity:1}
+  100%{transform:scale(1)}
+}
 .bn-label{font-size:12.5px;color:var(--muted);font-weight:700;text-align:center;margin:2px 0}
 
 /* ludo */

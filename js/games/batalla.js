@@ -1,7 +1,8 @@
 /* Batalla Naval — tablero 8×8, flota de 5 barcos.
    Colocación automática (con botón para reacomodar) para que en el celular
    sea rápido; después, a disparar por turnos. Si le atinas, repites. */
-import { turnGame, el, clear, beep, vibrate, rngInt, makeRng } from './lib/kit.js';
+import { turnGame, el, clear, beep, vibrate, rngInt, makeRng,
+         sfxCapture, sfxWall, sfxDrop, chord } from './lib/kit.js';
 
 const N = 8, FLEET = [5, 4, 3, 3, 2];
 const ix = (x, y) => y * N + x;
@@ -39,6 +40,7 @@ export default (ctx) => {
   const own = [...ctx.me.id].reduce((h, ch) => (h * 33 + ch.charCodeAt(0)) >>> 0, ctx.seed >>> 0);
   let myFleet = randomFleet(makeRng(own));
   let sent = false;
+  let disparos = -1, salidas = 0;   // para saber qué disparo es nuevo y cómo debe sonar
 
   return turnGame(ctx, {
     init(c, P){
@@ -104,14 +106,29 @@ export default (ctx) => {
       const myTurn = P.isMe(v.turn);
       ui.status(myTurn ? 'Tu turno: dispara 🎯' : `Disparando ${P.name(P.them)}…`, myTurn ? 'me' : 'them');
 
+      /* ¿hubo disparo nuevo? suena distinto si fue agua, tocado o hundido */
+      const total = v.outgoing.length + v.incoming.length;
+      let ultimo = null;
+      if(disparos >= 0 && total > disparos){
+        const mio = v.outgoing.length > salidas;
+        const o = mio ? v.outgoing.at(-1) : null;
+        const dio = mio ? o.hit : v.myShips.some(sh => sh.cells.includes(v.incoming.at(-1)));
+        if(mio && o?.sunk){ chord([300, 220, 160], .3); vibrate([50, 60, 90]); }
+        else if(dio){ sfxCapture(); vibrate(mio ? [25, 40, 25] : 80); }
+        else { sfxWall(); vibrate(10); }
+        ultimo = mio ? o.i : v.incoming.at(-1);
+      }
+      disparos = total; salidas = v.outgoing.length;
+
       const shotMap = new Map(v.outgoing.map(o => [o.i, o]));
       const enemy = el('div', { class:'bd bd-bn enemy' });
       for(let i = 0; i < N * N; i++){
         const o = shotMap.get(i);
         enemy.append(el('button', {
-          class:'bn-cell' + (o ? (o.hit ? ' hit' : ' miss') : '') + (o?.sunk ? ' sunk' : ''),
+          class:'bn-cell' + (o ? (o.hit ? ' hit' : ' miss') : '') + (o?.sunk ? ' sunk' : '') +
+                (ultimo === i ? ' boom' : ''),
           text: o ? (o.hit ? '💥' : '·') : '',
-          onclick: () => { if(!myTurn || o) return; beep(420, .09); vibrate(25); api.act({ i }); },
+          onclick: () => { if(!myTurn || o) return; sfxDrop(); vibrate(25); api.act({ i }); },
         }));
       }
 
@@ -123,7 +140,8 @@ export default (ctx) => {
         const shot = v.incoming.includes(i);
         mine.append(el('div', {
           class:'bn-cell' + (shipHere ? ' ship' : '') + (shot && shipHere ? ' hit' : '') +
-                (shot && !shipHere ? ' miss' : '') + (sunkCells.has(i) ? ' sunk' : ''),
+                (shot && !shipHere ? ' miss' : '') + (sunkCells.has(i) ? ' sunk' : '') +
+                (ultimo === i ? ' boom' : ''),
           text: shot ? (shipHere ? '💥' : '·') : '',
         }));
       }
