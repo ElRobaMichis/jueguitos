@@ -37,13 +37,16 @@ self.addEventListener('fetch', (e) => {
 
   e.respondWith(
     caches.match(e.request).then(hit => {
-      const fresh = fetch(e.request)
+      // Revalidamos contra el servidor (no contra el caché HTTP del navegador),
+      // así una corrección llega en el siguiente arranque y no en 10 minutos.
+      const fresh = fetch(e.request, { cache: 'no-cache' })
         .then(res => {
           if(res.ok) caches.open(VERSION).then(c => c.put(e.request, res.clone()));
           return res;
         })
         .catch(() => hit);
-      return hit || fresh;                       // cache-first, revalidando por detrás
+      if(hit) e.waitUntil(fresh.catch(() => {}));
+      return hit || fresh;                       // rápido con mala señal, y se actualiza solo
     })
   );
 });
