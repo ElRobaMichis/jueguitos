@@ -16,6 +16,7 @@ class FakeNode {
     this.nodeType = tag === '#text' ? 3 : 1;
     this.children = []; this.handlers = {}; this.style = {}; this.dataset = {};
     this.className = ''; this._text = ''; this.value = ''; this.disabled = false;
+    this.style.setProperty = (k,v) => { this.style[k]=v; };
     this.classList = {
       add: (...c) => this.className += ' ' + c.join(' '),
       remove: () => {}, toggle: () => {}, contains: (c) => this.className.includes(c),

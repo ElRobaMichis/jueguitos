@@ -8,7 +8,14 @@ export function el(tag, attrs = {}, ...kids){
   for(const [k, v] of Object.entries(attrs)){
     if(v == null || v === false) continue;
     if(k === 'class')       n.className = v;
-    else if(k === 'style')  Object.assign(n.style, v);
+    else if(k === 'style'){
+      // Ojo: las variables CSS (--tint, --c) no se pueden asignar con
+      // Object.assign; hay que pasar por setProperty.
+      for(const [prop, val] of Object.entries(v)){
+        if(prop.startsWith('--')) n.style.setProperty(prop, val);
+        else n.style[prop] = val;
+      }
+    }
     else if(k === 'html')   n.innerHTML = v;
     else if(k === 'text')   n.textContent = v;
     else if(k.startsWith('on')) n.addEventListener(k.slice(2).toLowerCase(), v);
