@@ -119,6 +119,17 @@ function wireNet(){
   });
   net.on('peer-offline', (p) => toast(`${p.name} perdió la conexión…`));
 
+  /* Dos copias de la app en el mismo navegador comparten identidad y nunca se
+     verían entre sí. Antes fallaba en silencio; ahora se avisa. */
+  let avisoMismoEquipo = false;
+  net.on('same-device', () => {
+    if(avisoMismoEquipo) return;
+    avisoMismoEquipo = true;
+    $('#lobby-hint').textContent =
+      'Están los dos en el mismo navegador, por eso no se ven. Abre una en otro teléfono (o en una ventana privada).';
+    toast('⚠️ Las dos ventanas son del mismo navegador: no pueden verse entre sí', 6000);
+  });
+
   /* la otra persona eligió un juego */
   net.on('pick', (peer) => {
     renderGrid();

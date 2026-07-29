@@ -6,7 +6,7 @@
 /* Al subir una corrección hay que cambiar este número: el navegador detecta
    el service worker nuevo, se instala, toma el control y la app se recarga
    sola con la versión nueva (si no, habría que borrar datos a mano). */
-const VERSION = 'jueguitos-v3';
+const VERSION = 'jueguitos-v4';
 const CORE = [
   './', './index.html',
   './css/app.css', './css/games.css',

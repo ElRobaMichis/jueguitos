@@ -108,7 +108,12 @@ export class Net extends Emitter {
     this.tPres  = (pid) => `${this.base}/p/${pid}`;
     this.tPick  = (pid) => `${this.base}/k/${pid}`;
 
-    this._will = await this._seal({ t:'p', d:{ ...this.me, online:false } });
+    /* Identificador de esta pestaña. Sirve para distinguir "soy yo mismo" de
+       "hay otra copia de la app con mi mismo id de dispositivo" (pasa si abres
+       la app dos veces en el mismo navegador: comparten almacenamiento). */
+    this.sid = Math.random().toString(36).slice(2, 10);
+
+    this._will = await this._seal({ t:'p', d:{ ...this.me, online:false, sid:this.sid } });
     this._alive = true;
 
     await ensureMqtt();                            // la librería se baja al entrar, no al abrir
@@ -250,7 +255,7 @@ export class Net extends Emitter {
 
   _announce(){
     this._sealAndSend(this.tPres(this.me.id),
-      { t:'p', f:this.me.id, n:++this.seq, d:{ ...this.me, online:true, ts:Date.now() } },
+      { t:'p', f:this.me.id, n:++this.seq, d:{ ...this.me, online:true, ts:Date.now(), sid:this.sid } },
       { qos:1, retain:true }, true);
   }
 
@@ -324,7 +329,12 @@ export class Net extends Emitter {
     /* --- presencia --- */
     if(topic.startsWith(this.base + '/p/')){
       const d = env.d || {};
-      if(d.id === this.me.id) return;
+      if(d.id === this.me.id){
+        /* Mi mismo id de dispositivo pero otra pestaña: los dos jugadores están
+           en el mismo navegador y jamás se verían. Mejor decirlo. */
+        if(d.sid && d.sid !== this.sid && d.online) this.emit('same-device');
+        return;
+      }
       /* Aquí está: por este relay sí nos alcanzamos. */
       if(link && d.online && !link.sawPeer){ link.sawPeer = true; this._pickActive(); }
       const prev = this.peers.get(d.id);
