@@ -4,7 +4,7 @@
    Tablero y fichas son permanentes: así la ficha recorre las casillas una por
    una y la comida se ve, en vez de aparecer y desaparecer de golpe. */
 import { turnGame, el, clear, beep, vibrate,
-         animMs, sfxDice, sfxStep, sfxLand, sfxCapture, sfxLadder } from './lib/kit.js';
+         animMs, setDie, sfxDice, sfxStep, sfxLand, sfxCapture, sfxLadder } from './lib/kit.js';
 
 const SIZE = 15;
 const rot = ([x, y]) => [SIZE - 1 - y, x];             // 90° en el sentido del reloj
@@ -31,7 +31,8 @@ export default (ctx) => {
     class:'ludo-cell' + (SAFE.has(i) ? ' safe' : ''),
     style:{ gridColumn:x + 1, gridRow:y + 1 }, text: SAFE.has(i) ? '★' : '' })));
 
-  const die = el('div', { class:'die', text:'🎲' });
+  const die = el('div', { class:'die' });
+  setDie(die, 6);
   const dieWrap = el('div', { class:'die-wrap' }, die);
   const toks = {};                                      // `${id}:${k}` -> nodo
   let built = false, shown = null, playing = false, lastMove = -1, timers = [];
@@ -175,10 +176,11 @@ export default (ctx) => {
         stop();
         if(mv.kind === 'roll'){
           playing = true;
-          die.textContent = '🎲'; die.classList.add('rolling'); sfxDice();
+          die.classList.add('rolling'); sfxDice();
+          for(let i = 1; i <= 5; i++) later(() => setDie(die, 1 + Math.floor(Math.random() * 6)), i * 120);
           later(() => {
             die.classList.remove('rolling');
-            die.textContent = '⚀⚁⚂⚃⚄⚅'[mv.d - 1];
+            setDie(die, mv.d);
             die.classList.add('pop'); later(() => die.classList.remove('pop'), 320);
             beep(660, .07);
             playing = false;

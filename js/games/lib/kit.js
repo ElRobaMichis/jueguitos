@@ -12,6 +12,17 @@ export { makeRng, rngInt, shuffled, clamp, sleep, toast, sfxPop, chord,
     poder jugar miles de partidas; en el teléfono siempre vale 1. */
 export const animMs = (ms) => globalThis.__JG_FAST ? Math.max(1, ms * 0.02) : ms;
 
+/* Cara del dado dibujada con puntos: los caracteres ⚀⚁⚂ salen distintos (y
+   feos) según el teléfono, así que los pintamos nosotros. */
+const PIPS = { 1:[4], 2:[0,8], 3:[0,4,8], 4:[0,2,6,8], 5:[0,2,4,6,8], 6:[0,2,3,5,6,8] };
+export function setDie(node, n){
+  clear(node);
+  const grid = el('div', { class:'die-pips' });
+  const on = PIPS[n] || [];
+  for(let i = 0; i < 9; i++) grid.append(el('i', { class:'pip' + (on.includes(i) ? ' on' : '') }));
+  node.append(grid);
+}
+
 /** Estructura estándar: barra de estado + zona central + fila de botones. */
 export function layout(ctx, { status = '', scroll = false } = {}){
   const st     = el('div', { class:'g-status', text:status });

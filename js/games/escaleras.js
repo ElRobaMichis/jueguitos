@@ -5,7 +5,7 @@
    viaja incluye la jugada (de dónde salió, dónde cayó y a dónde lo mandó la
    serpiente o la escalera), así los dos teléfonos ven la misma animación. */
 import { turnGame, el, clear, beep, vibrate,
-         animMs, sfxDice, sfxStep, sfxLand, sfxLadder, sfxSnake } from './lib/kit.js';
+         animMs, setDie, sfxDice, sfxStep, sfxLand, sfxLadder, sfxSnake } from './lib/kit.js';
 
 const JUMPS = {
   2:38, 7:14, 8:31, 15:26, 21:42, 28:84, 36:44, 51:67, 71:91, 78:98,
@@ -15,7 +15,7 @@ const isLadder = (a) => JUMPS[a] > a;
 
 /* posición de una casilla (1..100) en % dentro del tablero; 0 = fuera, en la salida */
 function spot(n){
-  if(n <= 0) return { left:-7, top:103 };
+  if(n <= 0) return { left:5, top:105.5 };   // la salida, bajo la casilla 1
   const i = n - 1, row = Math.floor(i / 10);
   const col = row % 2 === 0 ? i % 10 : 9 - (i % 10);
   return { left: col * 10 + 5, top: (9 - row) * 10 + 5 };
@@ -35,7 +35,8 @@ export default (ctx) => {
     }
   }
   const tokens = {};                                    // id -> nodo de la ficha
-  const die = el('div', { class:'die', text:'🎲' });
+  const die = el('div', { class:'die' });
+  setDie(die, 6);
   const dieWrap = el('div', { class:'die-wrap' }, die);
 
   let shown = null, playing = false, lastMove = -1, timers = [];
@@ -121,13 +122,13 @@ export default (ctx) => {
       function animar(mv, api){
         stop();
         playing = true;
-        die.textContent = '🎲';
         die.classList.add('rolling');
         sfxDice();
 
+        for(let i = 1; i <= 5; i++) later(() => setDie(die, 1 + Math.floor(Math.random() * 6)), i * 130);
         later(() => {
           die.classList.remove('rolling');
-          die.textContent = '⚀⚁⚂⚃⚄⚅'[mv.d - 1];
+          setDie(die, mv.d);
           die.classList.add('pop');
           later(() => die.classList.remove('pop'), 320);
           beep(660, .07);
