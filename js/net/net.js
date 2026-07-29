@@ -233,7 +233,7 @@ export class Net extends Emitter {
         const buf = await this._seal(obj);
         this.client.publish(topic, buf, opts);
       }catch(e){ console.warn('[net] publish', e); }
-    });
+    }).catch(e => { console.warn('[net] cola de envío', e); });   // que un fallo no rompa la cadena
   }
 
   async _seal(obj){
@@ -273,8 +273,9 @@ export class Net extends Emitter {
       try{ env = await this._open(payload); }
       catch{ return; }                            // no es de nuestra sala (código distinto)
       if(!env) return;
-      this._route(topic, env);
-    });
+      try{ this._route(topic, env); }
+      catch(e){ console.warn('[net] route', e); }
+    }).catch(e => { console.warn('[net] cola de recepción', e); });
   }
 
   _route(topic, env){
