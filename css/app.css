@@ -130,6 +130,7 @@ input{-webkit-user-select:text;user-select:text}
 .divider{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:13px}
 .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
 .home-foot{max-width:360px;text-align:center;color:var(--muted);font-size:13.5px;line-height:1.5;margin:0}
+.home-ver{margin:0;font-size:11.5px;color:rgba(167,159,214,.6);text-align:center}
 
 /* ===========================================================
    TOPBAR / SALA

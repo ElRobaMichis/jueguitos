@@ -12,6 +12,9 @@ import {
 } from './core/ui.js';
 
 const EMOJIS = ['❤️', '😂', '😮', '😘', '😭', '🔥', '👏', '😜'];
+/* Se muestra abajo en la pantalla de inicio: si algo falla, sirve para saber
+   qué versión tiene cada teléfono. Cámbialo junto con VERSION en sw.js. */
+const VERSION = 'v4';
 
 const app = {
   code: null,
@@ -396,6 +399,7 @@ function setupChrome(){
 /* ------------------------------------------------------------- arranque -- */
 setupHome();
 setupChrome();
+$('#app-version').textContent = VERSION;
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
