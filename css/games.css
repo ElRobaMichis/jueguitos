@@ -383,7 +383,7 @@
 /* El frijol se pone ENCIMA de la carta, como en la lotería de mesa: la carta
    se sigue viendo (si la tapara, no sabrías qué tienes en tu lámina). */
 .lot-piedra{
-  position:absolute;left:50%;top:45%;width:50%;height:36%;
+  position:absolute;left:50%;top:40%;width:33%;height:25%;
   transform:translate(-50%,-50%) rotate(-14deg);
   border-radius:50%;
   background:radial-gradient(circle at 34% 28%, #b07a4e, #74431f 58%, #3d2411);
