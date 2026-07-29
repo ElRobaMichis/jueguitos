@@ -52,11 +52,15 @@ export const CARDS = [
      <path d="M50 22v-6" stroke="${T}" stroke-width="3" stroke-linecap="round"/>` },
 
   { n:'La sirena', bg:'#bfe0e8', a:
-    `<circle cx="50" cy="28" r="10" fill="${P}"/>
-     <path d="M38 26c0-10 6-14 12-14s12 4 12 14c-3-5-7-7-12-7s-9 2-12 7z" fill="${A}"/>
-     <path d="M42 38h16c4 8 4 16 0 24h-16c-4-8-4-16 0-24z" fill="${P}"/>
-     <path d="M42 62h16c6 10 4 20-8 24-12-4-14-14-8-24z" fill="${V}"/>
-     <path d="M50 86c-8 4-14 2-16-2 6 0 10-2 16-6 6 4 10 6 16 6-2 4-8 6-16 2z" fill="${VD}"/>` },
+    `<path d="M34 22c0-12 7-18 16-18s16 6 16 18c0 8-2 12-4 16-2-8-6-12-12-12s-10 4-12 12c-2-4-4-8-4-16z" fill="${A}"/>
+     <circle cx="50" cy="26" r="11" fill="${P}"/>
+     <circle cx="46" cy="25" r="1.8" fill="${N}"/><circle cx="54" cy="25" r="1.8" fill="${N}"/>
+     <path d="M46 32c3 2 5 2 8 0" stroke="${R}" stroke-width="2" fill="none" stroke-linecap="round"/>
+     <path d="M43 38h14c3 6 3 12 1 18H42c-2-6-2-12 1-18z" fill="${P}"/>
+     <path d="M40 30c-4 6-4 14 0 20" stroke="${A}" stroke-width="5" fill="none" stroke-linecap="round"/>
+     <path d="M60 30c4 6 4 14 0 20" stroke="${A}" stroke-width="5" fill="none" stroke-linecap="round"/>
+     <path d="M42 56h16c5 8 5 16-8 22-13-6-13-14-8-22z" fill="${V}"/>
+     <path d="M50 78c-7 6-13 8-18 6 5-3 8-7 10-12 3 3 5 5 8 6zm0 0c7 6 13 8 18 6-5-3-8-7-10-12-3 3-5 5-8 6z" fill="${VD}"/>` },
 
   { n:'La escalera', bg:'#e6ddcb', a:
     `<rect x="28" y="14" width="8" height="72" rx="3" fill="${T}"/>
@@ -90,22 +94,31 @@ export const CARDS = [
      <circle cx="60" cy="46" r="2.4" fill="${T}"/><circle cx="50" cy="51" r="2.4" fill="${T}"/>` },
 
   { n:'El valiente', bg:'#f1d7bf', a:
-    `<circle cx="42" cy="30" r="11" fill="${P}"/>
-     <path d="M24 84c2-16 8-24 18-24s16 8 18 24z" fill="${AZ}"/>
-     <path d="M64 74l14-44 5 2-14 44z" fill="${G}"/>
-     <path d="M62 76l8 2-2 6-8-2z" fill="${T}"/>
-     <path d="M36 34c3-2 5-2 7 0" stroke="${N}" stroke-width="2.4" fill="none"/>` },
+    `<circle cx="40" cy="32" r="12" fill="${P}"/>
+     <path d="M28 28c0-9 5-14 12-14s12 5 12 14c-3-4-7-6-12-6s-9 2-12 6z" fill="${N}"/>
+     <circle cx="36" cy="33" r="1.9" fill="${N}"/><circle cx="45" cy="33" r="1.9" fill="${N}"/>
+     <path d="M34 39c4 2 8 2 11 0" stroke="${N}" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+     <path d="M22 86c2-18 8-28 18-28s16 10 18 28z" fill="${AZ}"/>
+     <path d="M56 62l16-30" stroke="${P}" stroke-width="8" stroke-linecap="round"/>
+     <path d="M74 30l4-18 4 2-4 18z" fill="${G}"/>
+     <rect x="70" y="28" width="14" height="5" rx="2" transform="rotate(-12 77 30)" fill="${T}"/>` },
 
   { n:'El gorrito', bg:'#dce8f3', a:
     `<path d="M26 62c0-18 10-28 24-28s24 10 24 28z" fill="${AZ}"/>
      <rect x="20" y="62" width="60" height="9" rx="4" fill="${R}"/>
      <circle cx="50" cy="30" r="5" fill="${A}"/>` },
 
-  { n:'La muerte', bg:'#dfe3e6', a:
-    `<path d="M50 16c-15 0-25 11-25 25 0 9 5 15 10 19v10h30V60c5-4 10-10 10-19 0-14-10-25-25-25z" fill="${B}"/>
-     <circle cx="40" cy="42" r="6.5" fill="${N}"/><circle cx="60" cy="42" r="6.5" fill="${N}"/>
-     <path d="M50 50l-4 8h8z" fill="${N}"/>
-     <path d="M38 66h4v8h-4zm10 0h4v8h-4zm10 0h4v8h-4z" fill="${N}"/>` },
+  /* La muerte es el esqueleto con guadaña; la calavera, sólo el cráneo. */
+  { n:'La muerte', bg:'#cdd4d8', a:
+    `<circle cx="40" cy="24" r="12" fill="${B}"/>
+     <circle cx="36" cy="23" r="3.4" fill="${N}"/><circle cx="45" cy="23" r="3.4" fill="${N}"/>
+     <path d="M40 29l-2.5 4h5z" fill="${N}"/>
+     <path d="M35 33h2v4h-2zm4 0h2v4h-2zm4 0h2v4h-2z" fill="${N}"/>
+     <rect x="37" y="38" width="6" height="30" rx="3" fill="${B}"/>
+     <path d="M26 44h28M28 54h24M31 63h18" stroke="${B}" stroke-width="4" stroke-linecap="round"/>
+     <path d="M34 68l-6 18m12-18l6 18" stroke="${B}" stroke-width="5" stroke-linecap="round"/>
+     <path d="M70 14v72" stroke="${T}" stroke-width="4" stroke-linecap="round"/>
+     <path d="M70 16c-14 0-22 8-24 18 10-8 18-10 24-10z" fill="${G}"/>` },
 
   { n:'La pera', bg:'#eef0d2', a:
     `<path d="M50 30c8 0 10 8 8 14-2 5 8 10 8 22 0 12-8 20-16 20s-16-8-16-20c0-12 10-17 8-22-2-6 0-14 8-14z" fill="${VD}"/>
@@ -200,17 +213,25 @@ export const CARDS = [
      <path d="M40 40l-8-8m2 18l-12-4m14 14l-10 8" stroke="#f0774a" stroke-width="3" stroke-linecap="round"/>` },
 
   { n:'Las jaras', bg:'#e7ddc8', a:
-    `<path d="M22 78L74 26m-52 52l-6 6m58-58l6-6" stroke="${T}" stroke-width="3.4" stroke-linecap="round"/>
-     <path d="M74 26l-4-10 14 4z" fill="${G}"/>
-     <path d="M34 66L86 14" stroke="${T}" stroke-width="3.4" stroke-linecap="round"/>
-     <path d="M86 14l-4-10 14 4z" fill="${G}" transform="translate(-2 2)"/>
-     <path d="M22 78l10-4-6 10z" fill="${R}"/>` },
+    `<path d="M18 82L72 28" stroke="${T}" stroke-width="4" stroke-linecap="round"/>
+     <path d="M78 22L66 26l4 12z" fill="${G}"/>
+     <path d="M18 82l2-12 10 10z" fill="${R}"/>
+     <path d="M34 84L84 34" stroke="${T}" stroke-width="4" stroke-linecap="round"/>
+     <path d="M90 28L78 32l4 12z" fill="${G}"/>
+     <path d="M34 84l2-12 10 10z" fill="${R}"/>
+     <path d="M14 60L58 16" stroke="${T}" stroke-width="4" stroke-linecap="round"/>
+     <path d="M64 10L52 14l4 12z" fill="${G}"/>
+     <path d="M14 60l2-12 10 10z" fill="${R}"/>` },
 
   { n:'El músico', bg:'#e3dcef', a:
-    `<circle cx="42" cy="30" r="11" fill="${P}"/>
-     <path d="M26 86c2-18 8-28 18-28s16 10 18 28z" fill="${R}"/>
-     <path d="M52 36c10-4 20 0 24 8 3 6 0 12-6 12" stroke="${A}" stroke-width="5" fill="none" stroke-linecap="round"/>
-     <path d="M70 56l14-6-2 12z" fill="${A}"/>` },
+    `<circle cx="38" cy="34" r="12" fill="${P}"/>
+     <path d="M26 30c0-9 5-14 12-14s12 5 12 14c-3-4-7-6-12-6s-9 2-12 6z" fill="${N}"/>
+     <circle cx="35" cy="35" r="1.9" fill="${N}"/>
+     <path d="M20 86c2-18 8-28 18-28s16 10 18 28z" fill="${R}"/>
+     <path d="M48 44h22" stroke="${A}" stroke-width="6" stroke-linecap="round"/>
+     <path d="M70 32l14 6-14 6z" fill="${A}"/>
+     <circle cx="56" cy="38" r="3" fill="#d8a72f"/><circle cx="64" cy="38" r="3" fill="#d8a72f"/>
+     <path d="M78 20c0 4-4 4-4 8m10-4c0 4-4 4-4 8" stroke="${M}" stroke-width="2.4" fill="none" stroke-linecap="round"/>` },
 
   { n:'La araña', bg:'#e0e2e6', a:
     `<ellipse cx="50" cy="52" rx="16" ry="18" fill="${N}"/>
