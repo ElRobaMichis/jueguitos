@@ -370,6 +370,8 @@ function setupChrome(){
   $('#btn-leave').addEventListener('click', () => {
     net.leave();
     app._greeted = false;
+    app.code = null;
+    if(app.updatePendiente){ location.reload(); return; }   // ahora sí, versión nueva
     showScreen('home');
   });
 
@@ -387,12 +389,18 @@ setupChrome();
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 
-  /* Cuando publico una corrección, el service worker nuevo toma el control y
-     recargamos una vez para estrenarla. Sin esto habría que borrar los datos
-     del navegador a mano para ver los arreglos. */
+  /* Cuando publico una corrección, el service worker nuevo toma el control.
+     Recargamos para estrenarla, pero NUNCA a media partida: si están en una
+     sala, avisamos y la aplicamos cuando salgan. */
+  const habiaControlador = !!navigator.serviceWorker.controller;   // false = primera instalación
   let recargando = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if(recargando) return;
+    if(recargando || !habiaControlador) return;
+    if(app.code){                                   // en una sala: ni se te ocurra
+      app.updatePendiente = true;
+      toast('Hay una versión nueva ✨ se aplica al salir de la sala', 4000);
+      return;
+    }
     recargando = true;
     location.reload();
   });
