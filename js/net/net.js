@@ -35,6 +35,7 @@ const BROKERS = [
 ];
 const CONNECT_MS = 9000;      // si un broker no responde en 9 s, al siguiente
 const REVIVE_MS  = 16000;     // si tras caerse no vuelve en 16 s, al siguiente
+const STALE_MS   = 75000;     // margen antes de dar por caído a alguien callado
 
 const PROTO   = 'jgts/1';
 const SALT    = 'jueguitos-sal-2024';
@@ -304,6 +305,7 @@ export class Net extends Emitter {
       const peer = this.peers.get(id) || { id, name:env.d?.name, online:true };
       peer.pick = env.d?.pick ?? null;
       this.peers.set(id, peer);
+      this._alive2(peer);                          // si nos habla, está ahí
       this.emit('pick', peer);
       this.emit('peers', this.peerList());
       return;
@@ -311,7 +313,10 @@ export class Net extends Emitter {
 
     /* --- estado retenido del juego --- */
     if(topic === this.tState){
-      if(env.f !== this.me.id) this.emit('state', env.d, env.f);
+      if(env.f === this.me.id) return;
+      const p = this.peers.get(env.f);
+      if(p) this._alive2(p);
+      this.emit('state', env.d, env.f);
       return;
     }
 
@@ -325,11 +330,21 @@ export class Net extends Emitter {
     }
 
     const peer = this.peers.get(env.f);
-    if(peer){ peer.lastSeen = Date.now(); if(!peer.online){ peer.online = true; this.emit('peer-online', peer); this.emit('peers', this.peerList()); } }
+    if(peer) this._alive2(peer);
 
     if(env.t === 'hb') return;                    // sólo servía para refrescar lastSeen
     this.emit('msg', env);
     this.emit('msg:' + env.t, env.d, env);
+  }
+
+  /** Cualquier mensaje suyo prueba que sigue ahí: refresca y reanima. */
+  _alive2(peer){
+    peer.lastSeen = Date.now();
+    if(!peer.online){
+      peer.online = true;
+      this.emit('peer-online', peer);
+      this.emit('peers', this.peerList());
+    }
   }
 
   _dropPeer(id){
@@ -341,13 +356,16 @@ export class Net extends Emitter {
     }
   }
 
-  /* Si no sabemos nada de alguien en 16s lo marcamos desconectado.
-     (El last will cubre las caídas limpias; esto cubre las de red.) */
+  /* Quién está conectado lo dice el "last will" del broker, que es exacto y
+     salta a los ~45 s de que muere el socket. Esto es sólo una red de
+     seguridad para conexiones zombis, con una ventana holgada: si fuera
+     corta, bastaría con que el otro mirara otra app un momento (el navegador
+     frena los temporizadores en segundo plano) para verlo como desconectado. */
   _checkStale(){
     const now = Date.now();
     let changed = false;
     for(const p of this.peers.values()){
-      if(p.online && now - (p.lastSeen || 0) > 16000){ p.online = false; changed = true; this.emit('peer-offline', p); }
+      if(p.online && now - (p.lastSeen || 0) > STALE_MS){ p.online = false; changed = true; this.emit('peer-offline', p); }
     }
     if(changed) this.emit('peers', this.peerList());
   }
