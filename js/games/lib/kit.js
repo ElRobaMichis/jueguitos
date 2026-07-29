@@ -4,13 +4,17 @@
 
 import { el, clear, colorFor, initial, beep, vibrate } from '../../core/ui.js';
 export { el, clear, colorFor, initial, beep, vibrate };
-export { makeRng, rngInt, shuffled, clamp, sleep, toast, sfxPop, chord,
+export { makeRng, rngInt, shuffled, clamp, sleep, toast, sfxPop, chord, sfxWin, sfxLose,
          sfxDice, sfxLand, sfxStep, sfxLadder, sfxSnake, sfxDrop, sfxFlip,
          sfxCapture, sfxHit, sfxWall, sfxGoal, sfxError } from '../../core/ui.js';
 
 /** Factor de las animaciones. El banco de pruebas lo pone casi a cero para
     poder jugar miles de partidas; en el teléfono siempre vale 1. */
-export const animMs = (ms) => globalThis.__JG_FAST ? Math.max(1, ms * 0.02) : ms;
+export const animMs = (ms) => {
+  const f = globalThis.__JG_FAST;
+  if(!f) return ms;                                   // en el teléfono, siempre normal
+  return Math.max(1, ms * (typeof f === 'number' ? f : 0.02));
+};
 
 /* Cara del dado dibujada con puntos: los caracteres ⚀⚁⚂ salen distintos (y
    feos) según el teléfono, así que los pintamos nosotros. */
@@ -132,7 +136,7 @@ export function turnGame(ctx, def, uiOpts){
     state = def.init(ctx, P);
     api.sync();
     ctx.onMsg((m, from) => { if(m?.a != null) applyLocal(m.a, from); });
-    if(def.tick) timer = setInterval(() => { def.tick(state, api); }, 1000);
+    if(def.tick) timer = setInterval(() => { def.tick(state, api); }, animMs(def.tickMs || 1000));
   }
   /* --- invitado --- */
   else{

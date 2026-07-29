@@ -6,7 +6,7 @@
 /* Al subir una corrección hay que cambiar este número: el navegador detecta
    el service worker nuevo, se instala, toma el control y la app se recarga
    sola con la versión nueva (si no, habría que borrar datos a mano). */
-const VERSION = 'jueguitos-v5';
+const VERSION = 'jueguitos-v6';
 const CORE = [
   './', './index.html',
   './css/app.css', './css/games.css',
@@ -15,6 +15,7 @@ const CORE = [
   './js/core/emitter.js', './js/core/store.js', './js/core/ui.js', './js/core/engine.js',
   './js/net/net.js',
   './js/games/registry.js', './js/games/lib/kit.js',
+  './js/games/lib/loteria-art.js',
   './manifest.webmanifest', './assets/icon.svg',
 ];
 

@@ -17,9 +17,18 @@ class FakeNode {
     this.children = []; this.handlers = {}; this.style = {}; this.dataset = {};
     this.className = ''; this._text = ''; this.value = ''; this.disabled = false;
     this.style.setProperty = (k,v) => { this.style[k]=v; };
+    const clases = () => this.className.split(/\s+/).filter(Boolean);
+    const poner = (l) => { this.className = [...new Set(l)].join(' '); };
     this.classList = {
-      add: (...c) => this.className += ' ' + c.join(' '),
-      remove: () => {}, toggle: () => {}, contains: (c) => this.className.includes(c),
+      add: (...c) => poner([...clases(), ...c]),
+      remove: (...c) => poner(clases().filter(x => !c.includes(x))),
+      toggle: (c, f) => {
+        const hay = clases().includes(c);
+        const quiero = f === undefined ? !hay : !!f;
+        quiero ? poner([...clases(), c]) : poner(clases().filter(x => x !== c));
+        return quiero;
+      },
+      contains: (c) => clases().includes(c),
     };
   }
   cloneNode(){ return new FakeNode(this.tagName); }
@@ -185,6 +194,65 @@ for(const id of list){
                 (runs[0].result ? ` · ej: ${runs[0].result.res} (${runs[0].result.text || ''})` : ''));
   }
 }
+/* --- lotería: prueba de sus reglas (honesto vs. tramposo) ---
+   El robot que pulsa al azar jamás completaría una tabla de 16, así que
+   aquí se juega a propósito: uno marca sólo lo cantado y otro hace trampa. */
+async function probarLoteria(){
+  const nombreCelda = (c) => c.find(n => n.className?.includes?.('lot-cn'))[0]?.textContent;
+  const cantada     = (x) => x.el.find(n => n.className?.includes?.('lot-nombre'))[0]?.textContent;
+  const botonGrito  = (x) => x.el.find(n => n.textContent === '¡LOTERÍA!')[0];
+
+  async function partida(tramposo){
+    const mod = await import('../js/games/loteria.js');
+    const bus = makeBus();
+    let fin = null;
+    const onFinish = (isHost, res, text) => { if(!fin) fin = { res, text }; };
+    const A = { id:'A', name:'Agus' }, B = { id:'B', name:'Rebus' };
+    const cH = makeCtx({ isHost:true,  me:A, peer:B, seed:7, bus, onFinish });
+    const cG = makeCtx({ isHost:false, me:B, peer:A, seed:7, bus, onFinish });
+    const iH = await mod.default(cH), iG = await mod.default(cG);
+    const mis = cH.el.find(n => n.className?.includes?.('lot-celda'));
+
+    if(tramposo){
+      mis.forEach(c => c.fire('click'));                 // quita las 16 de golpe
+      await new Promise(r => setTimeout(r, 60));
+      botonGrito(cH)?.fire('click');
+    }else{
+      const vistas = new Set();
+      for(let t = 0; t < 3000 && !fin; t++){
+        await new Promise(r => setTimeout(r, 6));
+        const n = cantada(cH);
+        if(n && !vistas.has(n)){
+          vistas.add(n);
+          mis.find(c => nombreCelda(c) === n)?.fire('click');
+        }
+        if(mis.filter(c => c.classList.contains('libre')).length >= 16){
+          botonGrito(cH)?.fire('click');
+          break;
+        }
+      }
+    }
+    await new Promise(r => setTimeout(r, 120));
+    iH?.destroy?.(); iG?.destroy?.();
+    return fin;
+  }
+
+  const antes = globalThis.__JG_FAST;
+  globalThis.__JG_FAST = 0.08;              // baraja rápida, pero alcanzable
+  const honesto = await partida(false);
+  const trampa  = await partida(true);
+  globalThis.__JG_FAST = antes;
+
+  const okHonesto = honesto?.res === 'me';
+  const okTrampa  = trampa?.res === 'them' && /falso/.test(trampa?.text || '');
+  console.log(`${okHonesto ? '✓' : '✗'} loteria     jugador honesto gana con tabla llena` +
+              (okHonesto ? '' : ` (dio: ${JSON.stringify(honesto)})`));
+  console.log(`${okTrampa ? '✓' : '✗'} loteria     tramposo pierde y se le dice qué carta no salió` +
+              (okTrampa ? '' : ` (dio: ${JSON.stringify(trampa)})`));
+  return okHonesto && okTrampa ? 0 : 1;
+}
+if(!only) fails += await probarLoteria();
+
 /* --- juegos en vivo: prueba de humo (montar + destruir) --- */
 if(!only){
   for(const id of REALTIME){

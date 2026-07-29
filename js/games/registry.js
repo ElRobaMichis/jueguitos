@@ -12,6 +12,7 @@ export const GAMES = [
   { id:'ludo',       name:'Ludo',            emoji:'🎲', tint:'#8b5cf6', tag:'azar',   load:() => import('./ludo.js') },
   { id:'batalla',    name:'Batalla Naval',   emoji:'🚢', tint:'#22d3ee', tag:'turnos', load:() => import('./batalla.js') },
   { id:'memorama',   name:'Memorama',        emoji:'🃏', tint:'#ff4f9a', tag:'turnos', load:() => import('./memorama.js') },
+  { id:'loteria',    name:'Lotería',         emoji:'🎴', tint:'#f2c14e', tag:'azar',   load:() => import('./loteria.js') },
   { id:'buscaminas', name:'Buscaminas',      emoji:'💣', tint:'#f43f5e', tag:'turnos', load:() => import('./buscaminas.js') },
 
   /* --- palabras y dibujo ---------------------------------------------- */

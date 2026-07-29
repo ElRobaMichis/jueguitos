@@ -338,6 +338,60 @@
 .pq-n{font-size:11.5px;font-weight:800;color:var(--muted);letter-spacing:.1em}
 .pq-card p{margin:12px 0 0;font-size:20px;font-weight:700;line-height:1.35}
 
+/* ---------- lotería ---------- */
+.lot-head{display:flex;align-items:center;gap:12px;width:min(94vw,420px)}
+.lot-actual{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px}
+.lot-canto{
+  width:112px;height:112px;border-radius:14px;overflow:hidden;
+  border:3px solid rgba(255,255,255,.85);
+  box-shadow:0 10px 26px rgba(0,0,0,.5);
+}
+.lot-canto svg{display:block;width:100%;height:100%}
+.lot-canto.entra{animation:lotEntra .4s cubic-bezier(.3,1.3,.5,1)}
+@keyframes lotEntra{
+  0%{transform:scale(.6) rotate(-8deg);opacity:0}
+  60%{transform:scale(1.06) rotate(2deg);opacity:1}
+  100%{transform:scale(1) rotate(0)}
+}
+.lot-nombre{font-size:19px;font-weight:800;letter-spacing:-.01em;text-align:center}
+.lot-barra{width:112px;height:5px;border-radius:3px;background:rgba(255,255,255,.16);overflow:hidden}
+.lot-barra i{display:block;height:100%;width:100%;background:var(--yellow);transform-origin:left}
+@keyframes lotBarra{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+.lot-previa{
+  width:56px;display:flex;flex-direction:column;align-items:center;gap:4px;opacity:.55;
+}
+.lot-previa span{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.lot-previa svg{width:48px;height:48px;border-radius:8px;display:block}
+
+.lot-tabla{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:6px;
+  width:min(94vw,420px);margin:0 auto;
+  background:rgba(0,0,0,.3);padding:8px;border-radius:16px;
+}
+.lot-celda{
+  position:relative;border:0;padding:0;cursor:pointer;
+  aspect-ratio:1/1.22;border-radius:9px;overflow:hidden;background:#0f0b28;
+  display:flex;flex-direction:column;
+}
+.lot-art{flex:1;min-height:0}
+.lot-art svg{display:block;width:100%;height:100%}
+.lot-cn{
+  font-size:8.5px;font-weight:700;padding:2px 1px;line-height:1.1;
+  background:rgba(0,0,0,.55);color:#f4f1ff;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+/* la piedra tapa la carta hasta que la quitas */
+.lot-piedra{
+  position:absolute;inset:0;border-radius:9px;
+  background:radial-gradient(circle at 34% 30%, #6b6070, #2e2836 62%, #1b1722);
+  box-shadow:inset 0 -3px 6px rgba(0,0,0,.6), inset 0 3px 6px rgba(255,255,255,.14);
+  transition:transform .26s cubic-bezier(.4,1.4,.5,1), opacity .26s;
+}
+.lot-celda.libre .lot-piedra{transform:scale(0) rotate(50deg);opacity:0}
+.lot-celda.libre{box-shadow:0 0 0 2px var(--lime)}
+.lot-celda:active{transform:scale(.95)}
+.g-btn.lista{animation:bothPulse .6s var(--ease) infinite alternate}
+
 /* ---------- arcade ---------- */
 .g-wrap.arcade{align-items:center;justify-content:flex-start;gap:12px}
 .g-wrap.arcade canvas{border-radius:18px;border:1.5px solid var(--line);touch-action:none}
