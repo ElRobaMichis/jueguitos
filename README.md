@@ -117,12 +117,19 @@ por eso EMQX va primero en la lista.
 
 ### Cuántos datos gasta
 
-| Tipo de juego | Consumo aproximado |
+| Situación | Medido |
 |---|---|
-| Por turnos (gato, dominó, ludo, batalla…) | ~200 bytes por jugada. Una partida entera son unos **20–60 KB**. |
-| Dibujar y adivinar | ~0.5 KB/s mientras dibujas. |
-| Ping Pong / Air Hockey (los únicos en vivo) | ~2.5 KB/s → una partida de 3 minutos son unos **450 KB**. |
-| Estar en la sala sin jugar | Un latido cada 5 s: prácticamente nada. |
+| Primera vez que se abre la app | **120 KB** (96 KB son la librería MQTT). Después queda en caché: abre sin descargar nada. |
+| Cada juego, la primera vez que se abre | 0.9–2.3 KB |
+| Estar en la sala, sin jugar | **8 KB por hora** y por persona |
+| Juegos por turnos (gato, dominó, ludo, batalla…) | ~200 bytes por jugada → una partida entera, **20–60 KB** |
+| Dibujar y adivinar | ~0.5 KB/s mientras se dibuja |
+| Ping Pong / Air Hockey (los únicos en vivo) | 12 instantáneas/s de 139 B → **0.35 MB por partida** de 4 minutos |
+
+Con señal mala, la pantalla de inicio aparece sin esperar la librería de red
+(se descarga en paralelo mientras se escribe el nombre), y Ping Pong y Air
+Hockey interpolan: lo que se dibuja persigue a lo que dice la red, así los
+paquetes a destiempo no hacen saltar la pelota.
 
 ### Privacidad
 
