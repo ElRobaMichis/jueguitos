@@ -6,7 +6,7 @@
 /* Al subir una corrección hay que cambiar este número: el navegador detecta
    el service worker nuevo, se instala, toma el control y la app se recarga
    sola con la versión nueva (si no, habría que borrar datos a mano). */
-const VERSION = 'jueguitos-v4';
+const VERSION = 'jueguitos-v5';
 const CORE = [
   './', './index.html',
   './css/app.css', './css/games.css',
@@ -21,7 +21,12 @@ const CORE = [
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(VERSION)
-      .then(c => Promise.allSettled(CORE.map(u => c.add(u))))
+      .then(c => Promise.allSettled(CORE.map(async (u) => {
+        // cache:'reload' es la clave: sin esto una versión nueva se instalaba
+        // con los archivos viejos del caché del navegador y no cambiaba nada.
+        const res = await fetch(u, { cache: 'reload' });
+        if(res.ok) await c.put(u, res);
+      })))
       .then(() => self.skipWaiting())
   );
 });
