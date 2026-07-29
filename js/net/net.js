@@ -25,11 +25,16 @@
 
 import { Emitter } from '../core/emitter.js';
 
+/* Brokers públicos, en orden de preferencia. Se conecta por URL completa:
+   la opción `servers` de mqtt.js ignora la ruta en el navegador y el broker
+   cierra la conexión, así que la rotación la hacemos nosotros. */
 const BROKERS = [
-  { host: 'broker.emqx.io',     port: 8084, protocol: 'wss', path: '/mqtt' },
-  { host: 'broker.hivemq.com',  port: 8884, protocol: 'wss', path: '/mqtt' },
-  { host: 'test.mosquitto.org', port: 8081, protocol: 'wss', path: '/mqtt' },
+  'wss://broker.emqx.io:8084/mqtt',
+  'wss://broker.hivemq.com:8884/mqtt',
+  'wss://test.mosquitto.org:8081/mqtt',
 ];
+const CONNECT_MS = 9000;      // si un broker no responde en 9 s, al siguiente
+const REVIVE_MS  = 16000;     // si tras caerse no vuelve en 16 s, al siguiente
 
 const PROTO   = 'jgts/1';
 const SALT    = 'jueguitos-sal-2024';
@@ -86,41 +91,15 @@ export class Net extends Emitter {
     this.tPres  = (pid) => `${this.base}/p/${pid}`;
     this.tPick  = (pid) => `${this.base}/k/${pid}`;
 
-    const willPayload = await this._seal({ t:'p', d:{ ...this.me, online:false } });
+    this._will = await this._seal({ t:'p', d:{ ...this.me, online:false } });
+    this._alive = true;
 
-    this._setStatus('connecting');
-    this.client = mqtt.connect({
-      servers: BROKERS,
-      clientId: `${id}-${Math.random().toString(36).slice(2, 7)}`,
-      clean: true,
-      keepalive: 30,
-      reconnectPeriod: 1500,
-      connectTimeout: 9000,
-      resubscribe: true,
-      protocolVersion: 4,
-      will: { topic: this.tPres(id), payload: willPayload, qos: 1, retain: true },
-    });
+    // Empezamos por el último broker que funcionó en este teléfono.
+    let start = 0;
+    try{ start = Math.max(0, BROKERS.indexOf(localStorage.getItem('jgts:broker'))); }catch{}
+    this._connectTo(start);
 
-    this.client.on('connect', () => {
-      this.client.subscribe([
-        { topic: this.tMsg,               qos: 0 },
-        { topic: `${this.base}/p/+`,      qos: 1 },
-        { topic: `${this.base}/k/+`,      qos: 1 },
-        { topic: this.tState,             qos: 1 },
-      ], { qos: 1 });
-
-      this._announce();
-      this._setStatus('online');
-      this._flushOutbox();
-      this.emit('reconnected');
-    });
-
-    this.client.on('reconnect', () => this._setStatus('connecting'));
-    this.client.on('close',     () => { if(this.status !== 'idle') this._setStatus('offline'); });
-    this.client.on('error',     (e) => console.warn('[net] error', e?.message || e));
-    this.client.on('message',   (topic, payload) => this._onRaw(topic, payload));
-
-    // Latido: mantiene "lastSeen" fresco y mide latencia.
+    // Latido: mantiene fresco el "lastSeen" del otro lado.
     clearInterval(this._hb);
     this._hb = setInterval(() => {
       if(this.status === 'online'){
@@ -130,8 +109,70 @@ export class Net extends Emitter {
     }, 5000);
   }
 
+  /** Conecta a un broker; si no responde o muere, salta al siguiente. */
+  _connectTo(i){
+    if(!this._alive) return;
+    const url = BROKERS[i % BROKERS.length];
+    this._brokerIdx = i;
+    this._setStatus('connecting');
+
+    const client = mqtt.connect(url, {
+      clientId: `${this.me.id}-${Math.random().toString(36).slice(2, 7)}`,
+      clean: true,
+      keepalive: 30,
+      reconnectPeriod: 2000,
+      connectTimeout: CONNECT_MS,
+      resubscribe: true,
+      protocolVersion: 4,
+      will: { topic: this.tPres(this.me.id), payload: this._will, qos: 1, retain: true },
+    });
+    this.client = client;
+
+    let connected = false;
+    const rotate = () => {
+      if(!this._alive || this.client !== client) return;
+      clearTimeout(this._giveUp);
+      try{ client.end(true); }catch{}
+      console.warn('[net] broker sin respuesta:', url, '→ probando el siguiente');
+      this._connectTo(i + 1);
+    };
+    // Si nunca llega a conectar, rotamos; si se cae y no revive, también.
+    this._giveUp = setTimeout(rotate, CONNECT_MS + 1000);
+
+    client.on('connect', () => {
+      if(this.client !== client) return;
+      connected = true;
+      clearTimeout(this._giveUp);
+      try{ localStorage.setItem('jgts:broker', url); }catch{}
+
+      client.subscribe([
+        { topic: this.tMsg,          qos: 0 },
+        { topic: `${this.base}/p/+`, qos: 1 },
+        { topic: `${this.base}/k/+`, qos: 1 },
+        { topic: this.tState,        qos: 1 },
+      ], { qos: 1 });
+
+      this._announce();
+      this._setStatus('online');
+      this._flushOutbox();
+      this.emit('reconnected');
+    });
+
+    client.on('reconnect', () => { if(this.client === client) this._setStatus('connecting'); });
+    client.on('close', () => {
+      if(this.client !== client || !this._alive) return;
+      this._setStatus('offline');
+      clearTimeout(this._giveUp);
+      this._giveUp = setTimeout(rotate, connected ? REVIVE_MS : CONNECT_MS);
+    });
+    client.on('error',   (e) => console.warn('[net] error', e?.message || e));
+    client.on('message', (topic, payload) => { if(this.client === client) this._onRaw(topic, payload); });
+  }
+
   leave(){
+    this._alive = false;
     clearInterval(this._hb);
+    clearTimeout(this._giveUp);
     if(this.client){
       try{
         // Limpia los retained propios para que la sala quede vacía de verdad.
