@@ -17,8 +17,22 @@ export default (ctx) => liveGame(ctx, {
       score:{ [P.host]:0, [P.guest]:0 },
       hold: 0.8,
     };
-    const prev = { x:W / 2, y:H - 20 };
     let mine = { x:W / 2, y:H - 20 }, lastSent = 0;
+    /* Lo dibujado persigue a lo que dice la red: con paquetes irregulares,
+       pintar la posición cruda haría saltar el disco y el mazo. */
+    const view = { p:{ x:W / 2, y:H / 2 }, m:{ [P.host]:{ x:W / 2, y:H - 20 }, [P.guest]:{ x:W / 2, y:20 } } };
+    const ease = (dt) => {
+      const k = Math.min(1, dt * 14);
+      view.p.x += (S.puck.x - view.p.x) * k;
+      view.p.y += (S.puck.y - view.p.y) * k;
+      if(Math.hypot(S.puck.x - view.p.x, S.puck.y - view.p.y) > 22){ view.p = { ...S.puck }; }
+      for(const id of [P.host, P.guest]){
+        if(id === c.me.id){ view.m[id] = { ...S.m[id] }; continue; }   // el mío, al instante
+        const q = Math.min(1, dt * 16);
+        view.m[id].x += (S.m[id].x - view.m[id].x) * q;
+        view.m[id].y += (S.m[id].y - view.m[id].y) * q;
+      }
+    };
     const flip = !c.isHost;
     const fy = (y) => flip ? H - y : y;
 
@@ -44,6 +58,7 @@ export default (ctx) => liveGame(ctx, {
       onInput(v, from){ S.m[from] = { x:v[0], y:v[1] }; },
 
       step(dt){
+        ease(dt);
         if(S.hold > 0){ S.hold -= dt; return; }
         const p = S.puck;
         p.x += p.vx * dt; p.y += p.vy * dt;
@@ -91,7 +106,11 @@ export default (ctx) => liveGame(ctx, {
         if(S.score[P.host] !== a[8] || S.score[P.guest] !== a[9]){ beep(340, .16); vibrate(60); }
         S.score[P.host] = a[8]; S.score[P.guest] = a[9];
       },
-      predict(dt){ S.puck.x += S.puck.vx * dt; S.puck.y += S.puck.vy * dt; },
+      predict(dt){
+        S.puck.x += S.puck.vx * dt; S.puck.y += S.puck.vy * dt;
+        if(S.puck.x < PR || S.puck.x > W - PR) S.puck.vx *= -1;   // rebote lateral previsible
+        ease(dt);
+      },
 
       draw(){
         g.fillStyle = '#0f0b28'; g.fillRect(0, 0, W * k, H * k);
@@ -105,9 +124,9 @@ export default (ctx) => liveGame(ctx, {
         }
 
         const disc = (x, y, r, col) => { g.fillStyle = col; g.beginPath(); g.arc(x * k, fy(y) * k, r * k, 0, 7); g.fill(); };
-        disc(S.m[c.me.id].x,   S.m[c.me.id].y,   MR, P.color(c.me.id));
-        disc(S.m[c.peer.id].x, S.m[c.peer.id].y, MR, P.color(c.peer.id));
-        disc(S.puck.x, S.puck.y, PR, '#fff');
+        disc(view.m[c.me.id].x,   view.m[c.me.id].y,   MR, P.color(c.me.id));
+        disc(view.m[c.peer.id].x, view.m[c.peer.id].y, MR, P.color(c.peer.id));
+        disc(view.p.x, view.p.y, PR, '#fff');
 
         st.textContent = `Tú ${S.score[c.me.id]} — ${S.score[c.peer.id]} ${c.peer.name}   ·   primero a ${WIN}`;
       },

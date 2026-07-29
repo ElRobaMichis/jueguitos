@@ -33,9 +33,25 @@ const BROKERS = [
   'wss://broker.hivemq.com:8884/mqtt',
   'wss://test.mosquitto.org:8081/mqtt',
 ];
-const CONNECT_MS = 9000;      // si un broker no responde en 9 s, al siguiente
-const REVIVE_MS  = 16000;     // si tras caerse no vuelve en 16 s, al siguiente
-const STALE_MS   = 75000;     // margen antes de dar por caído a alguien callado
+const CONNECT_MS   = 9000;    // si un broker no responde en 9 s, al siguiente
+const REVIVE_MS    = 16000;   // si tras caerse no vuelve en 16 s, al siguiente
+const STALE_MS     = 75000;   // margen antes de dar por caído a alguien callado
+const HEARTBEAT_MS = 25000;   // latido de cortesía (el broker ya vigila con keepalive)
+
+/* La librería MQTT pesa 96 KB comprimidos: 4 veces más que toda la app. Se
+   baja al entrar a una sala, no al abrir la página, para que con señal mala
+   la pantalla de inicio aparezca de inmediato. */
+let mqttReady = null;
+function ensureMqtt(){
+  if(globalThis.mqtt) return Promise.resolve();
+  return mqttReady ||= new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = new URL('../../vendor/mqtt.min.js', import.meta.url).href;
+    s.onload = resolve;
+    s.onerror = () => { mqttReady = null; reject(new Error('no se pudo cargar mqtt')); };
+    document.head.append(s);
+  });
+}
 
 const PROTO   = 'jgts/1';
 const SALT    = 'jueguitos-sal-2024';
@@ -95,19 +111,24 @@ export class Net extends Emitter {
     this._will = await this._seal({ t:'p', d:{ ...this.me, online:false } });
     this._alive = true;
 
+    await ensureMqtt();                            // la librería se baja al entrar, no al abrir
+
     // Empezamos por el último broker que funcionó en este teléfono.
     let start = 0;
     try{ start = Math.max(0, BROKERS.indexOf(localStorage.getItem('jgts:broker'))); }catch{}
     this._connectTo(start);
 
-    // Latido: mantiene fresco el "lastSeen" del otro lado.
+    /* Latido de cortesía. Quien avisa de verdad si alguien se cae es el broker
+       (last will), y cualquier jugada refresca el "lastSeen"; por eso va lento:
+       a 5 s se gastaban ~180 KB por hora de estar en la sala sin jugar. */
     clearInterval(this._hb);
     this._hb = setInterval(() => {
-      if(this.status === 'online'){
-        this.publish({ t:'hb', d:{ ts: Date.now() } }, { qos: 0 });
-        this._checkStale();
-      }
-    }, 5000);
+      if(this.status !== 'online') return;
+      this._checkStale();
+      // sólo hablamos si llevamos rato callados
+      if(Date.now() - (this._lastOut || 0) > HEARTBEAT_MS - 1000)
+        this.publish({ t:'hb', d:{} }, { qos: 0 });
+    }, HEARTBEAT_MS);
   }
 
   /** Conecta a un broker; si no responde o muere, salta al siguiente. */
@@ -228,6 +249,7 @@ export class Net extends Emitter {
 
   _sealAndSend(topic, obj, opts){
     // Cola secuencial: el cifrado es asíncrono y queremos preservar el orden.
+    this._lastOut = Date.now();
     this._sendQ = this._sendQ.then(async () => {
       if(!this.client) return;
       try{

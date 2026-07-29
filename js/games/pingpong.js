@@ -24,6 +24,20 @@ export default (ctx) => liveGame(ctx, {
       serve: 0.9,
     };
     let myX = W / 2, lastSent = 0;
+    /* Lo que se dibuja va persiguiendo a lo que dice la red. Con la señal
+       irregular del campo, los paquetes llegan a destiempo; si pintáramos su
+       posición tal cual, la pelota y la raqueta darían saltos. */
+    const view = { bx:W / 2, by:H / 2, pad:{ [P.host]:W / 2, [P.guest]:W / 2 } };
+    const ease = (dt) => {
+      const k = Math.min(1, dt * 14);
+      view.bx += (S.ball.x - view.bx) * k;
+      view.by += (S.ball.y - view.by) * k;
+      if(Math.hypot(S.ball.x - view.bx, S.ball.y - view.by) > 22){ view.bx = S.ball.x; view.by = S.ball.y; }
+      for(const id of [P.host, P.guest]){
+        if(id === c.me.id){ view.pad[id] = S.pad[id]; continue; }   // la mía, al instante
+        view.pad[id] += (S.pad[id] - view.pad[id]) * Math.min(1, dt * 16);
+      }
+    };
 
     /* Yo siempre me veo abajo: si soy el invitado, volteo la cancha al dibujar. */
     const flip = !c.isHost;
@@ -50,6 +64,7 @@ export default (ctx) => liveGame(ctx, {
       onInput(x, from){ S.pad[from] = clamp(x, PW / 2, W - PW / 2); },
 
       step(dt){
+        ease(dt);
         if(S.serve > 0){ S.serve -= dt; return; }
         const b = S.ball;
         b.x += b.vx * dt; b.y += b.vy * dt;
@@ -88,7 +103,11 @@ export default (ctx) => liveGame(ctx, {
         S.score[P.host] = a[6]; S.score[P.guest] = a[7];
       },
       /* El invitado adelanta la pelota entre paquetes para que se vea fluida. */
-      predict(dt){ S.ball.x += S.ball.vx * dt; S.ball.y += S.ball.vy * dt; },
+      predict(dt){
+        S.ball.x += S.ball.vx * dt; S.ball.y += S.ball.vy * dt;
+        if(S.ball.x < R || S.ball.x > W - R) S.ball.vx *= -1;   // rebote de pared previsible
+        ease(dt);
+      },
 
       draw(){
         g.fillStyle = '#0f0b28'; g.fillRect(0, 0, W * scale, H * scale);
@@ -108,11 +127,11 @@ export default (ctx) => liveGame(ctx, {
           g.roundRect((x - PW / 2) * scale, (y - PH / 2) * scale, PW * scale, PH * scale, 3);
           g.fill();
         };
-        pad(S.pad[c.me.id],   vy(c.isHost ? H - 2 : 2), P.color(c.me.id));
-        pad(S.pad[c.peer.id], vy(c.isHost ? 2 : H - 2), P.color(c.peer.id));
+        pad(view.pad[c.me.id],   vy(c.isHost ? H - 2 : 2), P.color(c.me.id));
+        pad(view.pad[c.peer.id], vy(c.isHost ? 2 : H - 2), P.color(c.peer.id));
 
         g.fillStyle = '#fff';
-        g.beginPath(); g.arc(S.ball.x * scale, vy(S.ball.y) * scale, R * scale, 0, 7); g.fill();
+        g.beginPath(); g.arc(view.bx * scale, vy(view.by) * scale, R * scale, 0, 7); g.fill();
 
         st.textContent = `Tú ${S.score[c.me.id]} — ${S.score[c.peer.id]} ${c.peer.name}   ·   primero a ${WIN}`;
       },

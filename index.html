@@ -12,6 +12,10 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png">
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/games.css">
+<!-- La librería de red se descarga en paralelo, sin frenar la primera pantalla,
+     y de una vez vamos abriendo el canal con el broker. -->
+<link rel="preload" href="vendor/mqtt.min.js" as="script">
+<link rel="preconnect" href="https://broker.emqx.io:8084" crossorigin>
 </head>
 <body>
 
@@ -121,7 +125,6 @@
 
 <div class="toast-wrap" id="toast-wrap"></div>
 
-<script src="vendor/mqtt.min.js"></script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>
