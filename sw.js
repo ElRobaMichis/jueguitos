@@ -3,7 +3,10 @@
      - archivos propios  -> cache primero, y se actualizan en segundo plano
      - todo lo demás     -> red (el tráfico del juego nunca pasa por aquí) */
 
-const VERSION = 'jueguitos-v1';
+/* Al subir una corrección hay que cambiar este número: el navegador detecta
+   el service worker nuevo, se instala, toma el control y la app se recarga
+   sola con la versión nueva (si no, habría que borrar datos a mano). */
+const VERSION = 'jueguitos-v2';
 const CORE = [
   './', './index.html',
   './css/app.css', './css/games.css',

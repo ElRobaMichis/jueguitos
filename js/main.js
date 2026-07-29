@@ -386,4 +386,14 @@ setupChrome();
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+
+  /* Cuando publico una corrección, el service worker nuevo toma el control y
+     recargamos una vez para estrenarla. Sin esto habría que borrar los datos
+     del navegador a mano para ver los arreglos. */
+  let recargando = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if(recargando) return;
+    recargando = true;
+    location.reload();
+  });
 }
