@@ -339,7 +339,7 @@
 .pq-card p{margin:12px 0 0;font-size:20px;font-weight:700;line-height:1.35}
 
 /* ---------- lotería ---------- */
-.lot-head{display:flex;align-items:center;gap:12px;width:min(94vw,420px)}
+.lot-head{display:flex;align-items:center;gap:12px;width:100%;max-width:420px;margin:0 auto}
 .lot-actual{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px}
 .lot-canto{
   width:112px;height:112px;border-radius:14px;overflow:hidden;
@@ -365,7 +365,7 @@
 
 .lot-tabla{
   display:grid;grid-template-columns:repeat(4,1fr);gap:6px;
-  width:min(94vw,420px);margin:0 auto;
+  width:100%;max-width:420px;margin:0 auto;
   background:rgba(0,0,0,.3);padding:8px;border-radius:16px;
 }
 .lot-celda{
@@ -380,15 +380,20 @@
   background:rgba(0,0,0,.55);color:#f4f1ff;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-/* la piedra tapa la carta hasta que la quitas */
+/* El frijol se pone ENCIMA de la carta, como en la lotería de mesa: la carta
+   se sigue viendo (si la tapara, no sabrías qué tienes en tu lámina). */
 .lot-piedra{
-  position:absolute;inset:0;border-radius:9px;
-  background:radial-gradient(circle at 34% 30%, #6b6070, #2e2836 62%, #1b1722);
-  box-shadow:inset 0 -3px 6px rgba(0,0,0,.6), inset 0 3px 6px rgba(255,255,255,.14);
-  transition:transform .26s cubic-bezier(.4,1.4,.5,1), opacity .26s;
+  position:absolute;left:50%;top:45%;width:50%;height:36%;
+  transform:translate(-50%,-50%) rotate(-14deg);
+  border-radius:50%;
+  background:radial-gradient(circle at 34% 28%, #b07a4e, #74431f 58%, #3d2411);
+  box-shadow:0 3px 7px rgba(0,0,0,.6), inset 0 -2px 4px rgba(0,0,0,.45),
+             inset 0 2px 3px rgba(255,255,255,.28);
+  transition:transform .28s cubic-bezier(.4,1.5,.5,1), opacity .24s;
 }
-.lot-celda.libre .lot-piedra{transform:scale(0) rotate(50deg);opacity:0}
-.lot-celda.libre{box-shadow:0 0 0 2px var(--lime)}
+.lot-celda.libre .lot-piedra{transform:translate(-50%,-160%) scale(.3) rotate(70deg);opacity:0}
+.lot-celda.libre{box-shadow:inset 0 0 0 2.5px var(--lime)}
+.lot-celda.libre .lot-cn{background:rgba(90,140,30,.85)}
 .lot-celda:active{transform:scale(.95)}
 .g-btn.lista{animation:bothPulse .6s var(--ease) infinite alternate}
 
