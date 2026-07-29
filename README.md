@@ -1,5 +1,7 @@
 # 🎲 Jueguitos
 
+**En línea:** https://elrobamichis.github.io/jueguitos/
+
 Una app de **23 juegos para dos**, pensada para jugar a distancia desde el
 teléfono. Uno crea la sala, comparte un código de 4 dígitos, y a jugar.
 
@@ -100,6 +102,18 @@ Se eligió MQTT en vez de las alternativas por lo siguiente:
   actualización en 60 ms.
 - **Un solo dueño de la verdad**: el anfitrión calcula y publica; el invitado
   manda intenciones. Nunca se desincronizan los tableros.
+
+### Medido en la app publicada
+
+| Prueba | Resultado |
+|---|---|
+| Ida y vuelta de un mensaje (jugador → broker → jugador → broker → jugador) | 394–425 ms, mediana **409 ms** |
+| Retraso de una jugada en llegar | ~**200 ms** |
+| Entrega a 15 mensajes/s (ritmo de Ping Pong), QoS 0 | **45 de 45** |
+| Tiempo en conectar al broker | ~1.0 s (EMQX), 1.2 s (HiveMQ), 1.7 s (Mosquitto) |
+
+Medido desde México con los tres brokers respondiendo parecido (180–210 ms),
+por eso EMQX va primero en la lista.
 
 ### Cuántos datos gasta
 
