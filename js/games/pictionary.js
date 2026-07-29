@@ -66,7 +66,21 @@ export default (ctx) => {
   window.addEventListener('pointercancel', onUp);
 
   /* ---------------- lógica de la partida --------------------------------- */
-  let guessDraft = '';
+  /* La caja de adivinar es permanente: el reloj redibuja cada segundo y si la
+     recreáramos se perdería el foco y se cerraría el teclado al escribir. */
+  const guessInput = el('input', { class:'g-input', placeholder:'¿Qué es?', autocomplete:'off', enterkeyhint:'send' });
+  const guessForm = el('form', { class:'guess-form' }, guessInput,
+                       el('button', { class:'g-btn primary', type:'submit' }, '➤'));
+  let onGuess = () => {};
+  guessForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const t = guessInput.value.trim();
+    if(!t) return;
+    guessInput.value = '';
+    vibrate(15);
+    onGuess(t);
+  });
+  const logBox = el('div', { class:'pic-log' });
 
   const game = turnGame(ctx, {
     init(c, P){
@@ -111,7 +125,12 @@ export default (ctx) => {
     render(v, ui, c, api){
       const P = api.P;
       const iDraw = P.isMe(v.drawer);
-      clear(ui.center); clear(ui.actions);
+      onGuess = (t) => api.act({ guess:t });
+
+      // limpiamos todo MENOS la caja de adivinar (perdería el foco)
+      clear(ui.center);
+      [...ui.actions.children].forEach(n => { if(n !== guessForm) n.remove(); });
+      if(iDraw || v.phase !== 'draw') guessForm.remove();
 
       if(v.phase === 'choose'){
         if(iDraw){
@@ -131,26 +150,17 @@ export default (ctx) => {
       cv.style.pointerEvents = iDraw ? 'auto' : 'none';
       ui.center.append(cv);
 
-      if(v.log?.length)
-        ui.center.append(el('div', { class:'pic-log' },
-          ...v.log.map(l => el('span', { class:'pic-guess' + (l.ok ? ' ok' : ''), text:l.text }))));
+      clear(logBox);
+      if(v.log?.length){
+        v.log.forEach(l => logBox.append(el('span', { class:'pic-guess' + (l.ok ? ' ok' : ''), text:l.text })));
+        ui.center.append(logBox);
+      }
 
       if(iDraw){
-        ui.btn('🧽 Borrar', () => { wipe(); ctx.send({ clr:1 }); });
+        ui.btn('🧽 Borrar', () => { wipe(); ctx.send({ clr:1 }); beep(300, .05); });
         ui.btn('⏭ Saltar', () => api.act({ skip:1 }));
-      }else{
-        ui.actions.append(el('form', { class:'guess-form', onsubmit:(e) => {
-          e.preventDefault();
-          const inp = e.target.querySelector('input');
-          const t = (guessDraft || inp.value).trim();
-          if(!t) return;
-          guessDraft = ''; inp.value = '';
-          vibrate(15);
-          api.act({ guess:t });
-        } },
-          el('input', { class:'g-input', placeholder:'¿Qué es?', autocomplete:'off',
-                        oninput:(e) => guessDraft = e.target.value }),
-          el('button', { class:'g-btn primary', type:'submit' }, '➤')));
+      }else if(!guessForm.parentNode){
+        ui.actions.append(guessForm);
       }
     },
   }, { scroll:true });

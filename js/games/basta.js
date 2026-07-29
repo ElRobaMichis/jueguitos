@@ -1,6 +1,10 @@
 /* Basta / Stop — 3 rondas. Los dos escriben a la vez; quien grita "¡Basta!"
-   corta la ronda. 10 puntos si nadie repitió, 5 si coincidieron. */
-import { turnGame, el, clear, beep, vibrate, rngInt } from './lib/kit.js';
+   corta la ronda. 10 puntos si nadie repitió, 5 si coincidieron.
+
+   Importante: el formulario se crea UNA sola vez y nunca se borra. Antes se
+   reconstruía en cada redibujado (y el reloj redibuja cada segundo), así que
+   al escribir se perdía el foco y en el teléfono se cerraba el teclado. */
+import { turnGame, el, clear, beep, vibrate, rngInt, sfxError, chord } from './lib/kit.js';
 
 const CATS = ['Nombre', 'Animal', 'Comida', 'Color', 'Lugar', 'Cosa'];
 const LETTERS = 'ABCDEFGHIJLMNOPRSTV'.split('');
@@ -8,7 +12,28 @@ const ROUNDS = 3, TIME = 100;
 const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 
 export default (ctx) => {
-  let draft = {}, submitted = false;
+  let submitted = false, lastRound = 0, lastPhase = '';
+
+  /* --- piezas permanentes --- */
+  const letterNode = el('div', { class:'basta-letter' });
+  const inputs = {};
+  const form = el('div', { class:'basta-form' });
+  for(const cat of CATS){
+    const inp = el('input', { class:'g-input', autocomplete:'off', autocapitalize:'words', enterkeyhint:'next' });
+    inputs[cat] = inp;
+    form.append(el('label', { class:'basta-field' }, el('span', { text:cat }), inp));
+  }
+  /* Enter salta al siguiente campo en vez de cerrar el teclado. */
+  CATS.forEach((cat, i) => inputs[cat].addEventListener('keydown', (e) => {
+    if(e.key !== 'Enter') return;
+    e.preventDefault();
+    (inputs[CATS[i + 1]] || inputs[CATS[0]]).focus();
+  }));
+
+  const playBox   = el('div', { class:'basta-play' }, letterNode, form);
+  const revealBox = el('div', { class:'basta-reveal' });
+  const readAll   = () => Object.fromEntries(CATS.map(c => [c, inputs[c].value]));
+  const clearAll  = () => CATS.forEach(c => inputs[c].value = '');
 
   return turnGame(ctx, {
     init(c, P){
@@ -36,7 +61,7 @@ export default (ctx) => {
       if(a.answers && (s.phase === 'wait' || s.phase === 'play')){
         s.answers[from] = a.answers;
         if(s.phase === 'play') s.phase = 'wait';
-        if(s.ids.every(id => s.answers[id])) scoreRound(s, api);
+        if(s.ids.every(id => s.answers[id])) scoreRound(s);
         return;
       }
 
@@ -51,69 +76,76 @@ export default (ctx) => {
     },
 
     tick(s, api){
-      if(s.phase === 'play' || s.phase === 'wait'){
-        s.t--;
-        if(s.t <= 0){
-          if(s.phase === 'play'){ s.phase = 'wait'; s.t = 8; }
-          else scoreRound(s, api);                     // el que no mandó, se queda sin puntos
-        }
-        api.sync();
+      if(s.phase !== 'play' && s.phase !== 'wait') return;
+      s.t--;
+      if(s.t <= 0){
+        if(s.phase === 'play'){ s.phase = 'wait'; s.t = 8; }
+        else scoreRound(s);
       }
+      api.sync();
     },
 
     render(v, ui, c, api){
       const P = api.P;
-      clear(ui.center); clear(ui.actions);
 
-      /* --- se acabó la ronda: manda lo que llevas --- */
-      if(v.phase === 'wait' && !submitted && !v.mine){
-        submitted = true;
-        api.act({ answers: { ...draft } });
-      }
+      /* ronda nueva: vaciamos los campos */
+      if(v.round !== lastRound){ lastRound = v.round; clearAll(); submitted = false; }
       if(v.phase === 'play') submitted = false;
 
-      ui.status(v.phase === 'reveal' ? `Ronda ${v.round}/${ROUNDS} — resultados`
-                                     : `Letra ${v.letter} · ${v.t}s`,
-                v.phase === 'reveal' ? '' : 'me');
+      /* se acabó el tiempo o alguien gritó: mandamos lo que llevamos */
+      if(v.phase === 'wait' && !submitted && !v.mine){
+        submitted = true;
+        api.act({ answers: readAll() });
+      }
 
-      if(v.phase === 'reveal'){
-        const table = el('div', { class:'basta-res' });
-        CATS.forEach(cat => {
-          const a = v.mine?.[cat] || '—', b = v.theirs?.[cat] || '—';
-          const pts = v.detail?.[cat] || [0, 0];
-          table.append(el('div', { class:'basta-row' },
-            el('span', { class:'bc', text:cat }),
-            el('span', { class:'ba', style:{ color:P.color(P.me) },   text:`${a} (${pts[0]})` }),
-            el('span', { class:'ba', style:{ color:P.color(P.them) }, text:`${b} (${pts[1]})` })));
-        });
-        ui.center.append(el('div', { class:'basta-letter', text:v.letter }), table);
-        ui.center.append(el('div', { class:'g-pill', text:`${v.score[P.me]} — ${v.score[P.them]}` }));
-        ui.btn(v.round >= ROUNDS ? '🏁 Ver resultado' : '➡️ Siguiente ronda', () => api.act({ next:1 }), 'primary');
-        draft = {};
+      /* ---------- captura ---------- */
+      if(v.phase !== 'reveal'){
+        revealBox.remove();
+        if(!playBox.parentNode) ui.center.append(playBox);   // ojo: nunca se borra
+        letterNode.textContent = v.letter;
+        const bloqueado = v.phase !== 'play';
+        for(const cat of CATS) inputs[cat].disabled = bloqueado;
+
+        ui.status(v.phase === 'play' ? `Letra ${v.letter} · ${v.t}s`
+                                     : (v.theirsIn ? 'Contando puntos…' : `Esperando a ${P.name(P.them)}…`),
+                  v.phase === 'play' ? 'me' : 'them');
+
+        clear(ui.actions);
+        if(v.phase === 'play')
+          ui.btn('✋ ¡BASTA!', () => { chord([880, 660, 440], .2); vibrate([40, 40, 80]); api.act({ basta:1 }); }, 'primary');
+        else
+          ui.actions.append(el('div', { class:'g-pill', text:'⏳' }));
         return;
       }
 
-      ui.center.append(el('div', { class:'basta-letter', text:v.letter }));
-      const form = el('div', { class:'basta-form' });
-      CATS.forEach(cat => form.append(el('label', { class:'basta-field' },
-        el('span', { text:cat }),
-        el('input', {
-          class:'g-input', autocomplete:'off', value:draft[cat] || '',
-          disabled: v.phase !== 'play',
-          placeholder: v.letter + '…',
-          oninput:(e) => draft[cat] = e.target.value,
-        }))));
-      ui.center.append(form);
+      /* ---------- resultados ---------- */
+      playBox.remove();
+      clear(revealBox);
+      if(!revealBox.parentNode) ui.center.append(revealBox);
 
-      if(v.phase === 'play')
-        ui.btn('✋ ¡BASTA!', () => { beep(900, .18); vibrate([40, 40, 80]); api.act({ basta:1 }); }, 'primary');
-      else
-        ui.actions.append(el('div', { class:'g-pill', text: v.theirsIn ? 'Contando puntos…' : `Esperando a ${P.name(P.them)}…` }));
+      ui.status(`Ronda ${v.round}/${ROUNDS} — resultados`);
+      const table = el('div', { class:'basta-res' });
+      CATS.forEach(cat => {
+        const a = v.mine?.[cat]?.trim() || '—', b = v.theirs?.[cat]?.trim() || '—';
+        const [pa, pb] = v.detail?.[cat] || [0, 0];
+        table.append(el('div', { class:'basta-row' },
+          el('span', { class:'bc', text:cat }),
+          el('span', { class:'ba' + (pa ? ' ok' : ''), style:{ color:P.color(P.me) },   text:a }),
+          el('span', { class:'bp', text:`${pa}·${pb}` }),
+          el('span', { class:'ba' + (pb ? ' ok' : ''), style:{ color:P.color(P.them) }, text:b })));
+      });
+      revealBox.append(el('div', { class:'basta-letter small', text:v.letter }), table,
+                       el('div', { class:'g-pill', text:`${v.score[P.me]} — ${v.score[P.them]}` }));
+
+      if(lastPhase !== 'reveal'){ lastPhase = 'reveal'; beep(760, .1); }
+
+      clear(ui.actions);
+      ui.btn(v.round >= ROUNDS ? '🏁 Ver resultado' : '➡️ Siguiente ronda', () => api.act({ next:1 }), 'primary');
     },
   }, { scroll:true });
 };
 
-function scoreRound(s, api){
+function scoreRound(s){
   const [a, b] = s.ids;
   const A = s.answers[a] || {}, B = s.answers[b] || {};
   const L = s.letter.toLowerCase();

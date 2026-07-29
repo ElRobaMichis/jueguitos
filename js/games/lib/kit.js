@@ -4,7 +4,13 @@
 
 import { el, clear, colorFor, initial, beep, vibrate } from '../../core/ui.js';
 export { el, clear, colorFor, initial, beep, vibrate };
-export { makeRng, rngInt, shuffled, clamp, sleep, toast, sfxPop } from '../../core/ui.js';
+export { makeRng, rngInt, shuffled, clamp, sleep, toast, sfxPop, chord,
+         sfxDice, sfxLand, sfxStep, sfxLadder, sfxSnake, sfxDrop, sfxFlip,
+         sfxCapture, sfxHit, sfxWall, sfxGoal, sfxError } from '../../core/ui.js';
+
+/** Factor de las animaciones. El banco de pruebas lo pone casi a cero para
+    poder jugar miles de partidas; en el teléfono siempre vale 1. */
+export const animMs = (ms) => globalThis.__JG_FAST ? Math.max(1, ms * 0.02) : ms;
 
 /** Estructura estándar: barra de estado + zona central + fila de botones. */
 export function layout(ctx, { status = '', scroll = false } = {}){

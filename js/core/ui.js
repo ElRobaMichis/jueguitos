@@ -108,9 +108,56 @@ export function beep(freq = 660, dur = 0.08, type = 'sine', gain = 0.05){
   }catch{}
 }
 export function chord(freqs, dur = 0.3){ freqs.forEach((f, i) => setTimeout(() => beep(f, dur, 'triangle', 0.045), i * 70)); }
-export const sfxWin  = () => chord([523, 659, 784, 1047], 0.35);
-export const sfxLose = () => chord([392, 330, 262], 0.4);
-export const sfxPop  = () => beep(880, 0.05, 'square', 0.04);
+
+/** Ruido corto: sirve para golpes, dados y cosas que "raspan". */
+function noise(dur = 0.08, gain = 0.05, filterHz = 1800){
+  try{
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if(actx.state === 'suspended') actx.resume();
+    const n = Math.floor(actx.sampleRate * dur);
+    const buf = actx.createBuffer(1, n, actx.sampleRate);
+    const data = buf.getChannelData(0);
+    for(let i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = actx.createBufferSource(); src.buffer = buf;
+    const f = actx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = filterHz;
+    const g = actx.createGain(); g.gain.value = gain;
+    src.connect(f).connect(g).connect(actx.destination);
+    src.start();
+  }catch{}
+}
+
+/** Tono que se desliza de una frecuencia a otra. */
+function slide(from, to, dur = 0.25, gain = 0.05, type = 'sine'){
+  try{
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if(actx.state === 'suspended') actx.resume();
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(from, actx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(Math.max(30, to), actx.currentTime + dur);
+    g.gain.setValueAtTime(gain, actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + dur);
+    o.connect(g).connect(actx.destination);
+    o.start(); o.stop(actx.currentTime + dur);
+  }catch{}
+}
+
+export const sfxWin     = () => chord([523, 659, 784, 1047], 0.35);
+export const sfxLose    = () => chord([392, 330, 262], 0.4);
+export const sfxPop     = () => beep(880, 0.05, 'square', 0.04);
+/* --- sonidos de juego --- */
+export const sfxDice    = () => { for(let i = 0; i < 5; i++) setTimeout(() => noise(0.05, 0.05, 2600), i * 85); };
+export const sfxLand    = () => { noise(0.09, 0.07, 900); beep(180, 0.09, 'sine', 0.05); };
+export const sfxStep    = (i = 0) => beep(420 + Math.min(i, 12) * 26, 0.045, 'triangle', 0.035);
+export const sfxLadder  = () => { [523, 659, 784, 988, 1175].forEach((f, i) => setTimeout(() => beep(f, 0.09, 'triangle', 0.04), i * 65)); };
+export const sfxSnake   = () => slide(760, 150, 0.55, 0.055, 'sawtooth');
+export const sfxDrop    = () => { slide(520, 190, 0.16, 0.05, 'sine'); setTimeout(() => noise(0.06, 0.05, 700), 140); };
+export const sfxFlip    = () => beep(1150, 0.04, 'sine', 0.03);
+export const sfxCapture = () => { noise(0.12, 0.07, 1200); slide(300, 120, 0.18, 0.05, 'square'); };
+export const sfxHit     = () => beep(760, 0.035, 'square', 0.045);
+export const sfxWall    = () => beep(380, 0.03, 'square', 0.03);
+export const sfxGoal    = () => { slide(220, 660, 0.28, 0.055, 'triangle'); setTimeout(() => beep(880, 0.12, 'triangle', 0.05), 200); };
+export const sfxError   = () => slide(300, 140, 0.22, 0.05, 'square');
 
 export function vibrate(pattern){
   try{ navigator.vibrate?.(pattern); }catch{}

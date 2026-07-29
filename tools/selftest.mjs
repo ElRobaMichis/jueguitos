@@ -43,6 +43,7 @@ class FakeNode {
   removeEventListener(){ }
   animate(){ return { finished: Promise.resolve() }; }
   getBoundingClientRect(){ return { left:0, top:0, width:340, height:340 }; }
+  contains(node){ return node === this || this.children.some(c => c.contains?.(node)); }
   querySelector(){ return null; }
   fire(ev, arg = { preventDefault(){}, touches:[], changedTouches:[], clientX:10, clientY:10 }){
     (this.handlers[ev] || []).forEach(fn => fn(arg));
@@ -71,6 +72,7 @@ globalThis.document = {
 globalThis.window = { devicePixelRatio:1, innerWidth:390, innerHeight:844, addEventListener(){}, removeEventListener(){} };
 try{ globalThis.navigator.vibrate = () => {}; }
 catch{ Object.defineProperty(globalThis, 'navigator', { value:{ vibrate(){} }, configurable:true }); }
+globalThis.__JG_FAST = true;   // animaciones a cámara rápida en las pruebas
 globalThis.requestAnimationFrame = () => 0;
 globalThis.cancelAnimationFrame = () => {};
 
@@ -121,11 +123,11 @@ async function playOne(gameId, seed, maxSteps = 2200){
 
   let steps = 0, idle = 0;
   const rnd = (n) => Math.floor(Math.random() * n);
-  while(!result && steps < maxSteps && idle < 24){
+  while(!result && steps < maxSteps && idle < 70){
     const who = steps % 2 ? ctxH : ctxG;
     const btns = who.el.clickables();
-    // sin botones: puede que el juego esté esperando un temporizador (memorama)
-    if(!btns.length){ idle++; steps++; await new Promise(r => setTimeout(r, 25)); continue; }
+    // sin botones: el juego espera un temporizador (memorama) o una animación (dados)
+    if(!btns.length){ idle++; steps++; await new Promise(r => setTimeout(r, 40)); continue; }
     idle = 0;
     const b = btns[rnd(btns.length)];
     // rellena entradas de texto si las hay
