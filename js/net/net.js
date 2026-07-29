@@ -10,7 +10,9 @@
    alguien se cae) y mensajes "retained" (el que se reconecta recibe al
    instante el estado actual sin pedir nada).
 
-   Se conecta a una lista de brokers; si uno falla, mqtt.js rota al siguiente.
+   Se conecta a los TRES brokers a la vez y anuncia su presencia en todos, de
+   modo que los dos jugadores se encuentran aunque cada teléfono alcance unos
+   relays distintos. El juego se va por aquel donde estén los dos.
 
    Topics (base = jgts/1/<hash del código>):
      <base>/m        mensajes efímeros  (chat, emojis, jugadas, ping)
@@ -25,16 +27,14 @@
 
 import { Emitter } from '../core/emitter.js';
 
-/* Brokers públicos, en orden de preferencia. Se conecta por URL completa:
-   la opción `servers` de mqtt.js ignora la ruta en el navegador y el broker
-   cierra la conexión, así que la rotación la hacemos nosotros. */
+/* Brokers públicos. Se conecta por URL completa: la opción `servers` de
+   mqtt.js ignora la ruta en el navegador y el broker cierra la conexión. */
 const BROKERS = [
   'wss://broker.emqx.io:8084/mqtt',
   'wss://broker.hivemq.com:8884/mqtt',
   'wss://test.mosquitto.org:8081/mqtt',
 ];
-const CONNECT_MS   = 9000;    // si un broker no responde en 9 s, al siguiente
-const REVIVE_MS    = 16000;   // si tras caerse no vuelve en 16 s, al siguiente
+const CONNECT_MS   = 9000;    // tiempo máximo para que un relay conteste
 const STALE_MS     = 75000;   // margen antes de dar por caído a alguien callado
 const HEARTBEAT_MS = 25000;   // latido de cortesía (el broker ya vigila con keepalive)
 
@@ -113,10 +113,14 @@ export class Net extends Emitter {
 
     await ensureMqtt();                            // la librería se baja al entrar, no al abrir
 
-    // Empezamos por el último broker que funcionó en este teléfono.
-    let start = 0;
-    try{ start = Math.max(0, BROKERS.indexOf(localStorage.getItem('jgts:broker'))); }catch{}
-    this._connectTo(start);
+    /* Nos conectamos a LOS TRES brokers a la vez.
+       Antes cada teléfono recordaba "el último que me funcionó" y elegía por su
+       cuenta: si a uno le tocaba EMQX y al otro HiveMQ, los dos se veían en
+       verde… y no se encontraban nunca, porque estaban en relays distintos.
+       Ahora anunciamos nuestra presencia en todos y el juego se va por aquel
+       donde estén los dos (el de menor índice, así los dos eligen el mismo). */
+    this.links = BROKERS.map((url, i) => this._openLink(url, i));
+    this.active = null;
 
     /* Latido de cortesía. Quien avisa de verdad si alguien se cae es el broker
        (last will), y cualquier jugada refresca el "lastSeen"; por eso va lento:
@@ -131,43 +135,26 @@ export class Net extends Emitter {
     }, HEARTBEAT_MS);
   }
 
-  /** Conecta a un broker; si no responde o muere, salta al siguiente. */
-  _connectTo(i){
-    if(!this._alive) return;
-    const url = BROKERS[i % BROKERS.length];
-    this._brokerIdx = i;
-    this._setStatus('connecting');
+  /** Abre (y mantiene abierto) un broker. mqtt.js reintenta solo si se cae. */
+  _openLink(url, i){
+    const link = { url, i, client: null, up: false, sawPeer: false };
+    if(!this._alive) return link;
 
     const client = mqtt.connect(url, {
-      clientId: `${this.me.id}-${Math.random().toString(36).slice(2, 7)}`,
+      clientId: `${this.me.id}-${i}-${Math.random().toString(36).slice(2, 7)}`,
       clean: true,
       keepalive: 30,
-      reconnectPeriod: 2000,
+      reconnectPeriod: 3000,
       connectTimeout: CONNECT_MS,
       resubscribe: true,
       protocolVersion: 4,
       will: { topic: this.tPres(this.me.id), payload: this._will, qos: 1, retain: true },
     });
-    this.client = client;
-
-    let connected = false;
-    const rotate = () => {
-      if(!this._alive || this.client !== client) return;
-      clearTimeout(this._giveUp);
-      try{ client.end(true); }catch{}
-      console.warn('[net] broker sin respuesta:', url, '→ probando el siguiente');
-      this._connectTo(i + 1);
-    };
-    // Si nunca llega a conectar, rotamos; si se cae y no revive, también.
-    this._giveUp = setTimeout(rotate, CONNECT_MS + 1000);
+    link.client = client;
 
     client.on('connect', () => {
-      if(this.client !== client) return;
-      connected = true;
-      clearTimeout(this._giveUp);
-      try{ localStorage.setItem('jgts:broker', url); }catch{}
-
-      // Ojo: mqtt.js v5 sólo acepta el mapa {topic: {qos}}; con un arreglo de
+      link.up = true;
+      // Ojo: mqtt.js v5 sólo acepta el mapa {topic:{qos}}; con un arreglo de
       // objetos lanza excepción y se quedaba todo a medias.
       client.subscribe({
         [this.tMsg]:          { qos: 0 },
@@ -176,35 +163,52 @@ export class Net extends Emitter {
         [this.tState]:        { qos: 1 },
       }, (err) => { if(err) console.warn('[net] subscribe', err.message); });
 
-      this._announce();
-      this._setStatus('online');
+      this._pickActive();
+      this._refreshStatus();
+      this._announce();                      // "aquí estoy", en todos los relays
       this._flushOutbox();
       this.emit('reconnected');
     });
 
-    client.on('reconnect', () => { if(this.client === client) this._setStatus('connecting'); });
-    client.on('close', () => {
-      if(this.client !== client || !this._alive) return;
-      this._setStatus('offline');
-      clearTimeout(this._giveUp);
-      this._giveUp = setTimeout(rotate, connected ? REVIVE_MS : CONNECT_MS);
-    });
-    client.on('error',   (e) => console.warn('[net] error', e?.message || e));
-    client.on('message', (topic, payload) => { if(this.client === client) this._onRaw(topic, payload); });
+    client.on('close',   () => { link.up = false; link.sawPeer = false; this._pickActive(); this._refreshStatus(); });
+    client.on('error',   (e) => console.warn('[net]', url, e?.message || e));
+    client.on('message', (topic, payload) => this._onRaw(topic, payload, link));
+    return link;
   }
+
+  /** Canal de juego: el primer relay donde estemos los dos (los dos eligen igual). */
+  _pickActive(){
+    const links = this.links || [];
+    const antes = this.active?.url;
+    this.active = links.find(l => l.up && l.sawPeer) || links.find(l => l.up) || null;
+    if(this.active && this.active.url !== antes){
+      this.client = this.active.client;      // compatibilidad con el resto del código
+      if(antes) console.info('[net] canal →', this.active.url);
+    }
+  }
+
+  _refreshStatus(){
+    const up = (this.links || []).some(l => l.up);
+    this._setStatus(up ? 'online' : 'connecting');
+  }
+
+  /** Los mensajes pequeños y retenidos van a TODOS: así nos encontramos
+      aunque cada quien alcance relays distintos. */
+  _allUp(){ return (this.links || []).filter(l => l.up).map(l => l.client); }
 
   leave(){
     this._alive = false;
     clearInterval(this._hb);
-    clearTimeout(this._giveUp);
-    if(this.client){
+    for(const l of this.links || []){
       try{
         // Limpia los retained propios para que la sala quede vacía de verdad.
-        this.client.publish(this.tPres(this.me.id), '', { qos: 1, retain: true });
-        this.client.publish(this.tPick(this.me.id), '', { qos: 1, retain: true });
-        this.client.end(true);
+        l.client?.publish(this.tPres(this.me.id), '', { qos: 1, retain: true });
+        l.client?.publish(this.tPick(this.me.id), '', { qos: 1, retain: true });
+        l.client?.end(true);
       }catch{}
     }
+    this.links = [];
+    this.active = null;
     this.client = null;
     this.peers.clear();
     this._setStatus('idle');
@@ -227,34 +231,40 @@ export class Net extends Emitter {
     this.publish(env, { qos: 1 });
   }
 
-  /** Estado del juego (retained): quien se reconecte lo recibe de inmediato. */
+  /** Estado del juego (retained): quien se reconecte lo recibe de inmediato.
+      Va a todos los relays: es chico y así se recupera desde cualquiera. */
   publishState(state){
-    this._sealAndSend(this.tState, { t:'s', f:this.me.id, d:state, n:++this.seq }, { qos:1, retain:true });
+    this._sealAndSend(this.tState, { t:'s', f:this.me.id, d:state, n:++this.seq },
+                      { qos:1, retain:true }, true);
   }
   clearState(){
-    if(this.client) this.client.publish(this.tState, '', { qos: 1, retain: true });
+    for(const c of this._allUp()) try{ c.publish(this.tState, '', { qos: 1, retain: true }); }catch{}
   }
 
-  /** Juego seleccionado en el menú (retained por jugador). */
+  /** Juego seleccionado en el menú (retained por jugador, en todos los relays). */
   publishPick(gameId){
     if(this.me) this.me.pick = gameId;
-    this._sealAndSend(this.tPick(this.me.id), { t:'k', f:this.me.id, d:{ pick:gameId, name:this.me.name } },
-                      { qos:1, retain:true });
+    this._sealAndSend(this.tPick(this.me.id), { t:'k', f:this.me.id, n:++this.seq, d:{ pick:gameId, name:this.me.name } },
+                      { qos:1, retain:true }, true);
   }
 
   _announce(){
     this._sealAndSend(this.tPres(this.me.id),
-      { t:'p', d:{ ...this.me, online:true, ts:Date.now() } }, { qos:1, retain:true });
+      { t:'p', f:this.me.id, n:++this.seq, d:{ ...this.me, online:true, ts:Date.now() } },
+      { qos:1, retain:true }, true);
   }
 
-  _sealAndSend(topic, obj, opts){
+  /** `todos` = mándalo por cada relay conectado (presencia, elección, estado).
+      Si no, va sólo por el canal activo (chat y jugadas). */
+  _sealAndSend(topic, obj, opts, todos = false){
     // Cola secuencial: el cifrado es asíncrono y queremos preservar el orden.
     this._lastOut = Date.now();
     this._sendQ = this._sendQ.then(async () => {
-      if(!this.client) return;
+      const destinos = todos ? this._allUp() : (this.active?.up ? [this.active.client] : this._allUp().slice(0, 1));
+      if(!destinos.length) return;
       try{
         const buf = await this._seal(obj);
-        this.client.publish(topic, buf, opts);
+        for(const c of destinos) c.publish(topic, buf, opts);
       }catch(e){ console.warn('[net] publish', e); }
     }).catch(e => { console.warn('[net] cola de envío', e); });   // que un fallo no rompa la cadena
   }
@@ -285,7 +295,7 @@ export class Net extends Emitter {
 
   /* ------------------------------------------------------------ recepción -- */
 
-  _onRaw(topic, payload){
+  _onRaw(topic, payload, link){
     if(!payload || payload.length === 0){        // retained borrado
       if(topic.includes('/p/')) this._dropPeer(topic.split('/p/')[1]);
       if(topic === this.tState) this.emit('state', null);
@@ -296,16 +306,27 @@ export class Net extends Emitter {
       try{ env = await this._open(payload); }
       catch{ return; }                            // no es de nuestra sala (código distinto)
       if(!env) return;
-      try{ this._route(topic, env); }
+
+      /* Lo retenido llega por los tres relays: procesamos sólo la primera copia. */
+      if(env.f && env.f !== this.me.id && env.n != null){
+        const marca = env.f + '#' + env.n;
+        if(this._seen.has(marca)) return;
+        this._seen.add(marca);
+        this._seenQ.push(marca);
+        if(this._seenQ.length > 400) this._seen.delete(this._seenQ.shift());
+      }
+      try{ this._route(topic, env, link); }
       catch(e){ console.warn('[net] route', e); }
     }).catch(e => { console.warn('[net] cola de recepción', e); });
   }
 
-  _route(topic, env){
+  _route(topic, env, link){
     /* --- presencia --- */
     if(topic.startsWith(this.base + '/p/')){
       const d = env.d || {};
       if(d.id === this.me.id) return;
+      /* Aquí está: por este relay sí nos alcanzamos. */
+      if(link && d.online && !link.sawPeer){ link.sawPeer = true; this._pickActive(); }
       const prev = this.peers.get(d.id);
       const peer = {
         ...(prev || {}), id:d.id, name:d.name, joinedAt:d.joinedAt,
@@ -402,12 +423,13 @@ export class Net extends Emitter {
 
   /** Al volver del segundo plano el socket suele estar muerto: forzamos reconexión. */
   wake(){
-    if(!this.client) return;
-    if(!this.client.connected){
-      try{ this.client.reconnect(); }catch{}
-    }else{
-      this._announce();
+    let alguno = false;
+    for(const l of this.links || []){
+      if(!l.client) continue;
+      if(l.client.connected) alguno = true;
+      else try{ l.client.reconnect(); }catch{}
     }
+    if(alguno) this._announce();
   }
 
   peerList(){ return [...this.peers.values()]; }
