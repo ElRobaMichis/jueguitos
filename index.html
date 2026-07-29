@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no,maximum-scale=1">
+<meta name="theme-color" content="#17123a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Jueguitos</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/games.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============ PANTALLA: INICIO ============ -->
+  <section class="screen is-active" id="screen-home">
+    <div class="home-wrap">
+      <header class="brand">
+        <div class="brand-logo">🎲</div>
+        <h1 class="brand-title">Jueguitos</h1>
+        <p class="brand-sub">Para jugar juntos, aunque estén lejos</p>
+      </header>
+
+      <div class="card">
+        <label class="field">
+          <span class="field-label">Tu nombre</span>
+          <input id="inp-name" type="text" maxlength="14" placeholder="Escribe tu nombre" autocomplete="given-name">
+        </label>
+
+        <button class="btn btn-primary btn-lg" id="btn-create">
+          <span class="btn-emoji">✨</span> Crear sala
+        </button>
+
+        <div class="divider"><span>o</span></div>
+
+        <label class="field">
+          <span class="field-label">Código de la sala</span>
+          <div class="code-input" id="code-input">
+            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" data-i="0">
+            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" data-i="1">
+            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" data-i="2">
+            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" data-i="3">
+          </div>
+        </label>
+
+        <button class="btn btn-ghost btn-lg" id="btn-join">
+          <span class="btn-emoji">🚪</span> Entrar a la sala
+        </button>
+      </div>
+
+      <p class="home-foot" id="home-hint">Uno crea la sala y le pasa el código de 4 dígitos al otro.</p>
+    </div>
+  </section>
+
+  <!-- ============ PANTALLA: SALA / MENÚ DE JUEGOS ============ -->
+  <section class="screen" id="screen-lobby">
+    <header class="topbar">
+      <button class="icon-btn" id="btn-leave" title="Salir">←</button>
+      <div class="room-badge">
+        <span class="room-label">Sala</span>
+        <strong class="room-code" id="lbl-code">0000</strong>
+        <button class="icon-btn sm" id="btn-share" title="Compartir">🔗</button>
+      </div>
+      <button class="icon-btn" id="btn-emoji-lobby" title="Mandar una reacción">😄</button>
+      <div class="peers" id="peers"></div>
+    </header>
+
+    <div class="conn-bar" id="conn-bar"><span class="dot"></span><span id="conn-text">Conectando…</span></div>
+
+    <div class="scoreline" id="scoreline"></div>
+
+    <div class="lobby-body">
+      <p class="lobby-hint" id="lobby-hint">Toca un juego. Cuando los dos toquen el mismo, empieza.</p>
+      <div class="game-grid" id="game-grid"></div>
+    </div>
+
+    <nav class="tabbar">
+      <button class="tab is-active" data-panel="games">🎮<span>Juegos</span></button>
+      <button class="tab" data-panel="chat">💬<span>Chat</span><i class="badge" id="chat-badge"></i></button>
+      <button class="tab" data-panel="score">🏆<span>Marcador</span></button>
+    </nav>
+  </section>
+
+  <!-- ============ PANTALLA: JUEGO ============ -->
+  <section class="screen" id="screen-game">
+    <header class="topbar game-topbar">
+      <button class="icon-btn" id="btn-quit">←</button>
+      <strong class="game-title" id="game-title"></strong>
+      <button class="icon-btn" id="btn-emoji-open">😄</button>
+    </header>
+    <div class="conn-bar" id="conn-bar-game"><span class="dot"></span><span id="conn-text-game"></span></div>
+    <div class="game-host" id="game-host"></div>
+  </section>
+
+</div>
+
+<!-- ============ OVERLAYS ============ -->
+<div class="sheet" id="sheet-chat" hidden>
+  <div class="sheet-head"><strong>Chat</strong><button class="icon-btn" data-close>✕</button></div>
+  <div class="chat-log" id="chat-log"></div>
+  <form class="chat-form" id="chat-form">
+    <input id="chat-input" type="text" maxlength="200" placeholder="Escribe algo bonito…" autocomplete="off">
+    <button class="btn btn-primary" type="submit">➤</button>
+  </form>
+</div>
+
+<div class="sheet" id="sheet-score" hidden>
+  <div class="sheet-head"><strong>Marcador</strong><button class="icon-btn" data-close>✕</button></div>
+  <div class="score-body" id="score-body"></div>
+</div>
+
+<div class="emoji-bar" id="emoji-bar" hidden></div>
+<div class="fx-layer" id="fx-layer"></div>
+
+<div class="countdown" id="countdown" hidden><div class="cd-num" id="cd-num">3</div><div class="cd-label" id="cd-label"></div></div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script src="vendor/mqtt.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
