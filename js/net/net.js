@@ -145,12 +145,14 @@ export class Net extends Emitter {
       clearTimeout(this._giveUp);
       try{ localStorage.setItem('jgts:broker', url); }catch{}
 
-      client.subscribe([
-        { topic: this.tMsg,          qos: 0 },
-        { topic: `${this.base}/p/+`, qos: 1 },
-        { topic: `${this.base}/k/+`, qos: 1 },
-        { topic: this.tState,        qos: 1 },
-      ], { qos: 1 });
+      // Ojo: mqtt.js v5 sólo acepta el mapa {topic: {qos}}; con un arreglo de
+      // objetos lanza excepción y se quedaba todo a medias.
+      client.subscribe({
+        [this.tMsg]:          { qos: 0 },
+        [`${this.base}/p/+`]: { qos: 1 },
+        [`${this.base}/k/+`]: { qos: 1 },
+        [this.tState]:        { qos: 1 },
+      }, (err) => { if(err) console.warn('[net] subscribe', err.message); });
 
       this._announce();
       this._setStatus('online');
