@@ -124,6 +124,9 @@ export class Engine {
     const S = this.session;
     if(!S || S.ended) return;
     S.ended = true;
+    // Se acabó: paramos el juego. Si no, los de canvas siguen simulando y
+    // dibujando a 60 fps detrás del resultado, gastando batería para nada.
+    try{ S.api?.destroy?.(); }catch(e){ console.warn('[engine] al detener', e); }
 
     const won  = winnerId === this.me.id;
     const draw = !winnerId;

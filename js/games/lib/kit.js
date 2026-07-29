@@ -154,7 +154,9 @@ export const turnClass = (P, turnId) => (P.isMe(turnId) ? 'me' : 'them');
    El anfitrión simula la física y manda el estado a 15 Hz (paquetes de ~60 B,
    unos 3 KB/s como mucho); el invitado interpola y sólo manda su control.
    =========================================================================== */
-export function liveGame(ctx, def, hz = 15){
+/* 12 instantáneas por segundo: con la interpolación de los juegos se ve igual
+   de fluido que a 15 y se ahorra un 20 % de datos. */
+export function liveGame(ctx, def, hz = 12){
   const P = players(ctx);
   let last = 0, raf = 0, running = true;
   const api = { P, isHost: ctx.isHost, finish: (r, t) => ctx.isHost && ctx.finish(r, t) };
