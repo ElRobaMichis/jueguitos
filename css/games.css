@@ -129,15 +129,20 @@
 .sl-tok.foe{transform:translate(-24%,-24%)}
 .sl-tok.sliding{transition:left .8s cubic-bezier(.45,0,.3,1), top .8s cubic-bezier(.45,0,.3,1)}
 
-/* memorama — volteo 3D de verdad */
-.bd-mem{grid-template-columns:repeat(4,1fr);aspect-ratio:4/5;gap:7px;width:min(84vw,340px);perspective:900px}
+/* memorama — volteo 3D de verdad.
+   Ojo: la altura la manda cada carta (aspect-ratio), NO el contenedor. Cuando
+   la ponía el contenedor, el interior con height:100% se quedaba en cero y no
+   se veía nada ni se podía picar. */
+.bd-mem{grid-template-columns:repeat(4,1fr);gap:7px;width:min(84vw,340px);perspective:900px}
 .mem-card{
+  position:relative;aspect-ratio:1/1.2;
   border:0;background:transparent;padding:0;cursor:pointer;
   border-radius:13px;
 }
 .mem-card:active .mem-inner{transform:scale(.93)}
+.mem-card.up:active .mem-inner{transform:rotateY(180deg) scale(.93)}
 .mem-inner{
-  position:relative;width:100%;height:100%;
+  position:absolute;inset:0;
   transform-style:preserve-3d;
   transition:transform .42s cubic-bezier(.4,.9,.4,1.2);
 }

@@ -14,7 +14,7 @@ import {
 const EMOJIS = ['❤️', '😂', '😮', '😘', '😭', '🔥', '👏', '😜'];
 /* Se muestra abajo en la pantalla de inicio: si algo falla, sirve para saber
    qué versión tiene cada teléfono. Cámbialo junto con VERSION en sw.js. */
-const VERSION = 'v11';
+const VERSION = 'v12';
 
 const app = {
   code: null,
@@ -103,7 +103,11 @@ async function enterRoom(code, name){
   app.engine = new Engine({
     code,
     me: app.me,
-    onExit: () => { app.inGame = false; showScreen('lobby'); clearPicks(); renderScore(); renderGrid(); },
+    onExit: () => {
+      app.inGame = false;
+      clear($('#chat-pops'));
+      showScreen('lobby'); clearPicks(); renderScore(); renderGrid();
+    },
   });
 
   wireNet();
@@ -154,10 +158,10 @@ function wireNet(){
     const log = store.pushChat(app.code, msg);
     if(log.at(-1) !== msg) return;                 // era un reenvío repetido
     appendChat(msg);
+    popChat(msg);                                  // globo en la esquina si estamos jugando
     if($('#sheet-chat').hidden){
       app.unread++;
-      $('#chat-badge').textContent = app.unread;
-      $('#chat-badge').classList.add('show');
+      paintUnread();
       beep(660, 0.06); vibrate(25);
     }
   });
@@ -266,6 +270,7 @@ async function launch(gameId, seed){
   app.inGame = true;
   clearPicks();
   closeSheet('sheet-chat'); closeSheet('sheet-score');
+  clear($('#chat-pops'));
   showScreen('game');
   await countdown(3, `${g.emoji} ${g.name}`);
   await app.engine.start(gameId, seed);
@@ -287,6 +292,35 @@ function appendChat(m, scroll = true){
   if(scroll) log.scrollTop = log.scrollHeight;
 }
 
+/* Globo en la esquina mientras se juega: se puede platicar sin salir del juego. */
+function popChat(m){
+  if(!app.inGame) return;
+  const quien = m.from === 'me' ? 'Tú' : (net.partner()?.name || '');
+  const pop = el('div', { class:'chat-pop ' + (m.from === 'me' ? 'me' : 'them') },
+    el('b', { text:quien }), m.text);
+  const pops = $('#chat-pops');
+  pops.append(pop);
+  while(pops.children.length > 3) pops.firstChild.remove();
+  setTimeout(() => { pop.classList.add('out'); setTimeout(() => pop.remove(), 320); }, 5200);
+}
+
+function paintUnread(){
+  for(const sel of ['#chat-badge', '#fab-badge']){
+    const b = $(sel);
+    if(!b) continue;
+    b.textContent = app.unread;
+    b.classList.toggle('show', app.unread > 0);
+  }
+}
+
+function openChat(){
+  openSheet('sheet-chat');
+  app.unread = 0;
+  paintUnread();
+  const log = $('#chat-log');
+  log.scrollTop = log.scrollHeight;
+}
+
 function sendChat(text){
   text = text.trim();
   if(!text) return;
@@ -294,6 +328,7 @@ function sendChat(text){
   const msg = { id, from:'me', text, ts:Date.now() };
   store.pushChat(app.code, msg);
   appendChat(msg);
+  popChat(msg);
   net.publishReliable({ t:'chat', i:id, d:{ text, ts:msg.ts } });
 }
 
@@ -338,12 +373,8 @@ function setupChrome(){
   $$('.tab').forEach(t => t.addEventListener('click', () => {
     const panel = t.dataset.panel;
     $$('.tab').forEach(x => x.classList.toggle('is-active', x === t));
-    if(panel === 'chat'){
-      openSheet('sheet-chat');
-      app.unread = 0;
-      $('#chat-badge').classList.remove('show');
-      $('#chat-log').scrollTop = $('#chat-log').scrollHeight;
-    } else closeSheet('sheet-chat');
+    if(panel === 'chat') openChat();
+    else closeSheet('sheet-chat');
     if(panel === 'score'){ renderScore(); openSheet('sheet-score'); } else closeSheet('sheet-score');
     if(panel === 'games'){ closeSheet('sheet-chat'); closeSheet('sheet-score'); }
   }));
@@ -390,6 +421,9 @@ function setupChrome(){
   });
 
   $('#btn-quit').addEventListener('click', () => app.engine?.exit(true));
+
+  /* burbuja de chat dentro del juego */
+  $('#chat-fab').addEventListener('click', openChat);
 
   /* al volver del segundo plano reconectamos de inmediato */
   document.addEventListener('visibilitychange', () => { if(!document.hidden) net.wake(); });
