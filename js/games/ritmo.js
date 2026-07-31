@@ -25,12 +25,30 @@ export default (ctx) => duelGame(ctx, {
     }
 
     const pads = el('div', { class:'rit-pads' });
+    const padNodes = [];
     LANES.forEach((sym, i) => {
       const b = el('button', { class:'rit-pad', style:{ '--c':COLORS[i] }, text:sym });
       b.addEventListener('pointerdown', (e) => { e.preventDefault(); tap(i, b); }, { passive:false });
+      padNodes.push(b);
       pads.append(b);
     });
-    c.el.append(el('div', { class:'g-wrap arcade' }, st, cv, pads));
+    const ayuda = el('div', { class:'rit-ayuda', text:'toca los botones o usa ← ↓ ↑ → del teclado' });
+    c.el.append(el('div', { class:'g-wrap arcade' }, st, cv, pads, ayuda));
+
+    /* Teclado: en la computadora no había forma de jugar, sólo el ratón sobre
+       cuatro botones. Con las flechas (o A S D F) se juega de verdad. */
+    const TECLAS = {
+      ArrowLeft:0, ArrowDown:1, ArrowUp:2, ArrowRight:3,
+      a:0, s:1, d:2, f:3, A:0, S:1, D:2, F:3,
+    };
+    const onKey = (e) => {
+      const lane = TECLAS[e.key];
+      if(lane == null) return;
+      e.preventDefault();                       // que las flechas no muevan la página
+      if(e.repeat) return;                      // mantener pulsado no cuenta como muchos toques
+      tap(lane, padNodes[lane]);
+    };
+    window.addEventListener('keydown', onKey);
 
     const lineY = h - 54, laneW = w / 4;
     let score = 0, combo = 0, best = 0, over = false;
@@ -47,7 +65,8 @@ export default (ctx) => duelGame(ctx, {
         const d = Math.abs(n.t - t);
         if(d < bestD){ bestD = d; hitNote = n; }
       }
-      node.animate?.([{ transform:'scale(.9)', filter:'brightness(1.9)' }, { transform:'scale(1)' }], 130);
+      node?.classList.add('hit');
+      setTimeout(() => node?.classList.remove('hit'), 110);
       if(!hitNote || bestD > GOOD){ combo = 0; flash = { txt:'…', c:'#8b8ba7', t:now() }; return; }
       hitNote.hit = bestD <= PERFECT ? 2 : 1;
       combo++; best = Math.max(best, combo);
@@ -109,6 +128,6 @@ export default (ctx) => duelGame(ctx, {
     };
     raf = requestAnimationFrame(loop);
 
-    return { destroy(){ cancelAnimationFrame(raf); } };
+    return { destroy(){ cancelAnimationFrame(raf); window.removeEventListener('keydown', onKey); } };
   },
 });

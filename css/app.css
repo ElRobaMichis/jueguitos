@@ -45,9 +45,15 @@ body{
   overscroll-behavior:none;
   -webkit-tap-highlight-color:transparent;
   touch-action:manipulation;
+  /* En iPhone, mantener el dedo sobre casi cualquier cosa saca el menú de
+     "Copiar / Seleccionar". Dibujando en el lienzo salía todo el tiempo. */
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-touch-callout:none;
 }
 button,input{font-family:inherit;color:inherit}
-input{-webkit-user-select:text;user-select:text}
+/* los campos de texto sí deben poder seleccionarse */
+input,textarea{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 
 /* ---------- pantallas ---------- */
 #app{position:fixed;inset:0}

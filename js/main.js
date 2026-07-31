@@ -14,7 +14,7 @@ import {
 const EMOJIS = ['❤️', '😂', '😮', '😘', '😭', '🔥', '👏', '😜'];
 /* Se muestra abajo en la pantalla de inicio: si algo falla, sirve para saber
    qué versión tiene cada teléfono. Cámbialo junto con VERSION en sw.js. */
-const VERSION = 'v10';
+const VERSION = 'v11';
 
 const app = {
   code: null,

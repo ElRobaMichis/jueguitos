@@ -263,6 +263,80 @@ async function probarLoteria(){
 }
 if(!only) fails += await probarLoteria();
 
+/* --- ritmo: teclado ---
+   En la computadora sólo se podía pulsar cuatro botones con el ratón: uno a
+   la vez y sin precisión, o sea injugable. */
+async function probarRitmo(){
+  const mod = await import('../js/games/ritmo.js');
+  const host = new FakeNode('div');
+  const inst = await mod.default({ el:host, me:{ id:'A', name:'Agus' }, peer:{ id:'B', name:'Rebus' },
+    isHost:true, seed:9, rng:Math.random, random:Math.random, send(){}, sendReliable(){}, onMsg(){},
+    saveState(){}, onState(){}, toast(){}, vibrate(){}, peerOnline:() => true, onPeerChange(){}, finish(){} });
+  await new Promise(r => setTimeout(r, 50));
+  // ojo: 'rit-pads' es el contenedor, 'rit-pad' los botones
+  const pads = host.find(n => n.classList?.contains?.('rit-pad'));
+
+  const pulsa = (key, repeat = false) => {
+    let evitado = false;
+    globalThis.window.dispatch('keydown', { key, repeat, preventDefault(){ evitado = true; } });
+    return evitado;
+  };
+  let mal = 0;
+  for(const [key, carril] of [['ArrowLeft',0], ['ArrowDown',1], ['ArrowUp',2], ['ArrowRight',3], ['a',0], ['f',3]]){
+    const evitado = pulsa(key);
+    if(!pads[carril]?.classList.contains('hit') || !evitado) mal++;
+    await new Promise(r => setTimeout(r, 130));
+  }
+  if(pulsa('z')) mal++;                                  // tecla ajena
+  pulsa('ArrowLeft', true);
+  if(pads[0]?.classList.contains('hit')) mal++;          // mantener pulsado no cuenta
+  inst?.destroy?.();
+
+  console.log(`${mal ? '✗' : '✓'} ritmo       se juega con ← ↓ ↑ → (o A S D F) y no mueve la página`);
+  return mal ? 1 : 0;
+}
+if(!only) fails += await probarRitmo();
+
+/* --- ahorcado: lo que le faltaba ---
+   Quien ponía la palabra no veía qué letras intentaba el otro, y al fallar
+   nunca se decía cuál era la palabra. */
+async function probarAhorcado(){
+  const mod = await import('../js/games/ahorcado.js');
+  const bus = makeBus();
+  const A = { id:'A', name:'Agus' }, B = { id:'B', name:'Rebus' };
+  const cH = makeCtx({ isHost:true,  me:A, peer:B, seed:3, bus, onFinish(){} });
+  const cG = makeCtx({ isHost:false, me:B, peer:A, seed:3, bus, onFinish(){} });
+  await mod.default(cH); await mod.default(cG);
+  await new Promise(r => setTimeout(r, 40));
+
+  const busca = (x, cls) => x.el.find(n => n.className?.includes?.(cls));
+  const tecla = (x, L) => busca(x, 'key').find(k => k.textContent === L);
+
+  const inp = cH.el.find(n => n.tagName === 'INPUT')[0];
+  inp.value = 'SOL';
+  (inp.handlers.input || []).forEach(f => f({ target:inp }));
+  cH.el.find(n => n.tagName === 'BUTTON').find(b => b.textContent.includes('Lista'))?.fire('click');
+  await new Promise(r => setTimeout(r, 40));
+
+  const veTeclado = busca(cH, 'key').length === 27;
+
+  for(const L of ['B', 'C', 'D']){ tecla(cG, L)?.fire('click'); await new Promise(r => setTimeout(r, 15)); }
+  tecla(cG, 'S')?.fire('click');
+  await new Promise(r => setTimeout(r, 15));
+  const enRojo  = busca(cH, 'key').filter(k => k.classList.contains('bad')).length;
+  const enVerde = busca(cH, 'key').filter(k => k.classList.contains('good')).length;
+
+  for(const L of ['F', 'G', 'H']){ tecla(cG, L)?.fire('click'); await new Promise(r => setTimeout(r, 15)); }
+  const revelada = (x) => busca(x, 'ah-era').map(n => n.textContent).join(' ');
+  const seRevela = /SOL/.test(revelada(cG)) && /SOL/.test(revelada(cH));
+
+  const ok = veTeclado && enRojo === 3 && enVerde === 1 && seRevela;
+  console.log(`${ok ? '✓' : '✗'} ahorcado    quien pone la palabra sigue la partida y al fallar se revela` +
+              (ok ? '' : ` (teclado:${veTeclado} rojo:${enRojo} verde:${enVerde} revela:${seRevela})`));
+  return ok ? 0 : 1;
+}
+if(!only) fails += await probarAhorcado();
+
 /* --- puntería: el gesto de deslizar (basket y arquería) ---
    El fallo era que había que jalar hacia atrás desde la pelota y con el ratón
    no quedaba espacio; y que soltar fuera del canvas dejaba el tiro colgado. */
