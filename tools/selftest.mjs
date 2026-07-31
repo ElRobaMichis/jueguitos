@@ -78,12 +78,22 @@ globalThis.document = {
   querySelector: () => null, querySelectorAll: () => [],
   getElementById: () => null, addEventListener(){},
 };
-globalThis.window = { devicePixelRatio:1, innerWidth:390, innerHeight:844, addEventListener(){}, removeEventListener(){} };
+/* La ventana escucha de verdad: los juegos de puntería oyen el arrastre en
+   window (si sueltas fuera del canvas), y sin esto no se podría probar. */
+const winH = {};
+globalThis.window = {
+  devicePixelRatio:1, innerWidth:390, innerHeight:844,
+  addEventListener(ev, fn){ (winH[ev] ||= []).push(fn); },
+  removeEventListener(ev, fn){ winH[ev] = (winH[ev] || []).filter(f => f !== fn); },
+  dispatch(ev, arg){ (winH[ev] || []).forEach(fn => fn(arg)); },
+};
 try{ globalThis.navigator.vibrate = () => {}; }
 catch{ Object.defineProperty(globalThis, 'navigator', { value:{ vibrate(){} }, configurable:true }); }
 globalThis.__JG_FAST = true;   // animaciones a cámara rápida en las pruebas
-globalThis.requestAnimationFrame = () => 0;
-globalThis.cancelAnimationFrame = () => {};
+/* Fotogramas de verdad: así los juegos de canvas ejecutan su física en las
+   pruebas y no sólo se comprueba que arrancan. */
+globalThis.requestAnimationFrame = (fn) => setTimeout(() => fn(performance.now()), 16);
+globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
 
 /* -------------------------------------------------------- bus de "red" ---- */
 function makeBus(){
@@ -252,6 +262,70 @@ async function probarLoteria(){
   return okHonesto && okTrampa ? 0 : 1;
 }
 if(!only) fails += await probarLoteria();
+
+/* --- puntería: el gesto de deslizar (basket y arquería) ---
+   El fallo era que había que jalar hacia atrás desde la pelota y con el ratón
+   no quedaba espacio; y que soltar fuera del canvas dejaba el tiro colgado. */
+async function probarPunteria(){
+  const { swipeShot } = await import('../js/games/lib/kit.js');
+  const puntero = (x, y) => ({ clientX:x, clientY:y, preventDefault(){}, touches:[], changedTouches:[] });
+  let mal = 0;
+
+  /* la matemática del gesto */
+  const casos = [
+    ['hacia arriba dispara',            { x0:170, y0:300, x:150, y:120 }, true],
+    ['en diagonal dispara',             { x0:80,  y0:300, x:220, y:120 }, true],
+    ['un toque no dispara',             { x0:170, y0:300, x:172, y:298 }, false],
+    ['hacia abajo no dispara',          { x0:170, y0:100, x:170, y:280 }, false],
+    ['de lado no dispara',              { x0:60,  y0:200, x:260, y:203 }, false],
+  ];
+  for(const [nombre, gesto, deberia] of casos){
+    const ok = !!swipeShot(gesto, { fuerza:4.6, tope:200 }) === deberia;
+    if(!ok){ mal++; console.log(`✗ gesto       ${nombre}`); }
+  }
+  const a = swipeShot({ x0:0, y0:200, x:0, y:0 }, { fuerza:4.6, tope:200 });
+  const b = swipeShot({ x0:0, y0:900, x:0, y:0 }, { fuerza:4.6, tope:200 });
+  if(Math.abs(Math.hypot(a.vx, a.vy) - Math.hypot(b.vx, b.vy)) > 1){
+    mal++; console.log('✗ gesto       pasado el tope sigue pegando más fuerte');
+  }
+
+  /* el cableado: soltar el ratón FUERA del canvas debe valer igual */
+  async function tira(juego, gesto){
+    const mod = await import(`../js/games/${juego}.js`);
+    const host = new FakeNode('div');
+    let vibró = 0;
+    const antes = globalThis.navigator.vibrate;
+    globalThis.navigator.vibrate = () => { vibró++; };
+    const ctx = { el:host, me:{ id:'A', name:'Agus' }, peer:{ id:'B', name:'Rebus' }, isHost:true, seed:5,
+      rng:Math.random, random:Math.random, send(){}, sendReliable(){}, onMsg(){},
+      saveState(){}, onState(){}, toast(){}, vibrate(){}, peerOnline:() => true,
+      onPeerChange(){}, finish(){} };
+    const inst = await mod.default(ctx);
+    const cv = host.find(n => n.tagName === 'CANVAS')[0];
+    await new Promise(r => setTimeout(r, 60));
+    vibró = 0;
+    cv.fire('pointerdown', puntero(gesto.x0, gesto.y0));
+    globalThis.window.dispatch('pointermove', puntero(gesto.x, gesto.y));
+    globalThis.window.dispatch('pointerup', puntero(gesto.x, gesto.y));   // fuera del canvas
+    await new Promise(r => setTimeout(r, 80));
+    inst?.destroy?.();
+    globalThis.navigator.vibrate = antes;
+    return vibró > 0;
+  }
+  for(const [juego, gesto, deberia] of [
+    ['basket',   { x0:170, y0:300, x:150, y:120 }, true],
+    ['basket',   { x0:170, y0:100, x:170, y:290 }, false],
+    ['arqueria', { x0:160, y0:310, x:200, y:110 }, true],
+    ['arqueria', { x0:160, y0:120, x:160, y:300 }, false],
+  ]){
+    const disparó = await tira(juego, gesto);
+    if(disparó !== deberia){ mal++; console.log(`✗ ${juego} el gesto ${JSON.stringify(gesto)} ${disparó?'disparó':'no disparó'}`); }
+  }
+
+  console.log(`${mal ? '✗' : '✓'} punteria    deslizar hacia el objetivo dispara; hacia abajo o un toque, no`);
+  return mal ? 1 : 0;
+}
+if(!only) fails += await probarPunteria();
 
 /* --- juegos en vivo: prueba de humo (montar + destruir) --- */
 if(!only){

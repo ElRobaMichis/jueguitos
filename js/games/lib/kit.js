@@ -66,6 +66,25 @@ export function makeCanvas(w, h){
   return { cv, g, w, h };
 }
 
+/* ===========================================================================
+   swipeShot — gesto de deslizar convertido en velocidad de lanzamiento.
+
+   Se desliza HACIA donde se quiere tirar, empezando en cualquier punto. La
+   alternativa (resortera: jalar hacia atrás desde la pelota) no sirve aquí
+   porque la pelota está casi al fondo del área y con el ratón no queda
+   espacio para tirar hacia atrás.
+
+   Devuelve null si el gesto no cuenta: demasiado corto (fue un toque) o
+   hacia abajo (no tiene sentido lanzar contra el suelo).
+   =========================================================================== */
+export function swipeShot({ x0, y0, x, y }, { fuerza = 4.6, tope = 200, minimo = 20 } = {}){
+  const dx = x - x0, dy = y - y0;
+  const largo = Math.hypot(dx, dy);
+  if(largo < minimo || dy > -10) return null;
+  const k = fuerza * Math.min(1, tope / largo);      // pasado el tope, no pega más fuerte
+  return { vx: dx * k, vy: dy * k, largo };
+}
+
 /** Coordenadas de un toque/click relativas al canvas, en px CSS. */
 export function pointerPos(cv, ev){
   const r = cv.getBoundingClientRect();

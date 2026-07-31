@@ -1,6 +1,6 @@
-/* Tiro con Arco — 8 flechas. Arrastra hacia atrás para tensar y suelta.
-   Hay viento (el mismo para los dos gracias a la semilla compartida). */
-import { duelGame, makeCanvas, pointerPos, makeRng, el, beep, vibrate, clamp } from './lib/kit.js';
+/* Tiro con Arco — 8 flechas. Se dispara deslizando hacia la diana desde
+   cualquier punto. Hay viento (el mismo para los dos por la semilla). */
+import { duelGame, makeCanvas, pointerPos, swipeShot, makeRng, el, beep, vibrate, clamp } from './lib/kit.js';
 
 const ARROWS = 8, G = 620;
 const RINGS = [[10, 12], [26, 8], [42, 5], [58, 3], [74, 1]];   // radio, puntos
@@ -28,13 +28,7 @@ export default (ctx) => duelGame(ctx, {
     /* Se dispara deslizando HACIA la diana, desde cualquier punto. Antes había
        que jalar hacia atrás desde el arco, y como el arco está casi al fondo
        apenas quedaban 46 px para tensar: imposible apuntar con el ratón. */
-    const flecha = (a) => {
-      const dx = a.x - a.x0, dy = a.y - a.y0;
-      const largo = Math.hypot(dx, dy);
-      if(largo < 18 || dy > -10) return null;
-      const k = 4.4 * Math.min(1, 175 / largo);
-      return { vx: dx * k, vy: dy * k };
-    };
+    const flecha = (a) => swipeShot(a, { fuerza:4.4, tope:175, minimo:18 });
 
     const onDown = (e) => {
       if(over || arrow) return;

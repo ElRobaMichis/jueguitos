@@ -1,6 +1,6 @@
-/* Basket — 60 s encestando. Arrastra desde el balón para lanzar:
-   la dirección y la distancia del arrastre marcan la fuerza. */
-import { duelGame, makeCanvas, pointerPos, el, beep, vibrate, clamp } from './lib/kit.js';
+/* Basket — 60 s encestando. Se lanza deslizando hacia el aro desde cualquier
+   punto: la dirección del gesto es la del tiro y su largo, la fuerza. */
+import { duelGame, makeCanvas, pointerPos, swipeShot, el, beep, vibrate, clamp } from './lib/kit.js';
 
 const TIME = 60, G = 900;
 
@@ -24,11 +24,8 @@ export default (ctx) => duelGame(ctx, {
        resortera: en el teléfono se salva con el pulgar, pero en la computadora
        sólo quedaban unos 50 px por debajo y no había espacio para apuntar. */
     const tiro = (a) => {
-      const dx = a.x - a.x0, dy = a.y - a.y0;
-      const largo = Math.hypot(dx, dy);
-      if(largo < 20 || dy > -12) return null;          // toque suelto o hacia abajo
-      const k = 4.6 * Math.min(1, 200 / largo);        // tope de potencia
-      return { vx: clamp(dx * k, -900, 900), vy: clamp(dy * k, -1500, -160) };
+      const v = swipeShot(a, { fuerza:4.6, tope:200 });
+      return v && { vx: clamp(v.vx, -900, 900), vy: clamp(v.vy, -1500, -160) };
     };
 
     const onDown = (e) => {
