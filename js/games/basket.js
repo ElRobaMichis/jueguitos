@@ -14,32 +14,51 @@ export default (ctx) => duelGame(ctx, {
 
     const R = 15;
     const rim = { x: w * .5, y: h * .28, w: 74, dir: 1, speed: 52 };
-    let ball = null, drag = null, score = 0, streak = 0, over = false;
-    const home = { x: w * .5, y: h - 60 };
+    let ball = null, aim = null, score = 0, streak = 0, over = false, tiros = 0;
+    const home = { x: w * .5, y: h - 56 };
     const reset = () => { ball = { x:home.x, y:home.y, vx:0, vy:0, live:false, scored:false }; };
     reset();
+
+    /* Se lanza deslizando HACIA el aro, empezando en cualquier punto de la
+       cancha. Antes había que jalar hacia atrás desde la pelota, como una
+       resortera: en el teléfono se salva con el pulgar, pero en la computadora
+       sólo quedaban unos 50 px por debajo y no había espacio para apuntar. */
+    const tiro = (a) => {
+      const dx = a.x - a.x0, dy = a.y - a.y0;
+      const largo = Math.hypot(dx, dy);
+      if(largo < 20 || dy > -12) return null;          // toque suelto o hacia abajo
+      const k = 4.6 * Math.min(1, 200 / largo);        // tope de potencia
+      return { vx: clamp(dx * k, -900, 900), vy: clamp(dy * k, -1500, -160) };
+    };
 
     const onDown = (e) => {
       if(over || ball.live) return;
       const p = pointerPos(cv, e);
-      if(Math.hypot(p.x - ball.x, p.y - ball.y) < 70) drag = p;
+      aim = { x0:p.x, y0:p.y, x:p.x, y:p.y };
       e.preventDefault();
     };
-    const onMove = (e) => { if(drag){ drag = pointerPos(cv, e); e.preventDefault(); } };
-    const onUp = (e) => {
-      if(!drag) return;
+    const onMove = (e) => {
+      if(!aim) return;
       const p = pointerPos(cv, e);
-      const dx = ball.x - p.x, dy = ball.y - p.y;
-      drag = null;
-      if(Math.hypot(dx, dy) < 14) return;
-      ball.vx = clamp(dx * 3.1, -900, 900);
-      ball.vy = clamp(dy * 3.1, -1500, -120);
-      ball.live = true;
-      beep(420, .06);
+      aim.x = p.x; aim.y = p.y;
+      e.preventDefault();
+    };
+    const onUp = (e) => {
+      if(!aim) return;
+      const p = pointerPos(cv, e);
+      aim.x = p.x; aim.y = p.y;
+      const v = tiro(aim);
+      aim = null;
+      if(!v) return;
+      ball.vx = v.vx; ball.vy = v.vy; ball.live = true;
+      tiros++;
+      beep(420, .06); vibrate(12);
     };
     cv.addEventListener('pointerdown', onDown, { passive:false });
-    cv.addEventListener('pointermove', onMove, { passive:false });
-    cv.addEventListener('pointerup', onUp);
+    /* en la ventana, no en el canvas: si sueltas el ratón fuera, el tiro salía igual */
+    window.addEventListener('pointermove', onMove, { passive:false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
 
     let t0 = performance.now(), last = t0, raf = 0;
     const loop = (now) => {
@@ -87,12 +106,29 @@ export default (ctx) => duelGame(ctx, {
         const x = rim.x - rim.w / 2 + (rim.w / 6) * i;
         g.beginPath(); g.moveTo(x, rim.y); g.lineTo(rim.x + (x - rim.x) * .5, rim.y + 24); g.stroke();
       }
-      // guía de tiro
-      if(drag){
-        g.strokeStyle = 'rgba(255,255,255,.5)'; g.setLineDash([5, 6]); g.lineWidth = 2;
-        g.beginPath(); g.moveTo(ball.x, ball.y);
-        g.lineTo(ball.x + (ball.x - drag.x), ball.y + (ball.y - drag.y));
-        g.stroke(); g.setLineDash([]);
+      /* guía: se dibuja la parábola que va a seguir el balón, así en la
+         computadora se puede apuntar sin adivinar */
+      if(aim){
+        const v = tiro(aim);
+        if(v){
+          g.strokeStyle = 'rgba(255,255,255,.55)'; g.setLineDash([4, 7]); g.lineWidth = 2;
+          g.beginPath(); g.moveTo(ball.x, ball.y);
+          let px = ball.x, py = ball.y, pvx = v.vx, pvy = v.vy;
+          for(let k = 0; k < 60; k++){
+            pvy += G * .022; px += pvx * .022; py += pvy * .022;
+            if(py > h || px < 0 || px > w) break;
+            g.lineTo(px, py);
+          }
+          g.stroke(); g.setLineDash([]);
+          const fuerza = Math.min(1, Math.hypot(v.vx, v.vy) / 950);
+          g.fillStyle = `hsl(${(1 - fuerza) * 90} 80% 60%)`;
+          g.fillRect(12, h - 14 - 60 * fuerza, 7, 60 * fuerza);
+        }
+        g.strokeStyle = 'rgba(255,255,255,.22)'; g.lineWidth = 1.5;
+        g.beginPath(); g.moveTo(aim.x0, aim.y0); g.lineTo(aim.x, aim.y); g.stroke();
+      }else if(!ball.live && tiros === 0){
+        g.fillStyle = 'rgba(255,255,255,.6)'; g.font = '13px system-ui'; g.textAlign = 'center';
+        g.fillText('desliza hacia el aro para tirar', w / 2, h - 18);
       }
       // balón
       g.fillStyle = '#ff7a45';
@@ -110,6 +146,11 @@ export default (ctx) => duelGame(ctx, {
     };
     raf = requestAnimationFrame(loop);
 
-    return { destroy(){ cancelAnimationFrame(raf); } };
+    return { destroy(){
+      cancelAnimationFrame(raf);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    } };
   },
 });

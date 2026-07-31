@@ -25,21 +25,44 @@ export default (ctx) => duelGame(ctx, {
     };
     newTarget();
 
-    const onDown = (e) => { if(over || arrow) return; drag = pointerPos(cv, e); e.preventDefault(); };
-    const onMove = (e) => { if(drag){ drag = pointerPos(cv, e); e.preventDefault(); } };
-    const onUp = () => {
+    /* Se dispara deslizando HACIA la diana, desde cualquier punto. Antes había
+       que jalar hacia atrás desde el arco, y como el arco está casi al fondo
+       apenas quedaban 46 px para tensar: imposible apuntar con el ratón. */
+    const flecha = (a) => {
+      const dx = a.x - a.x0, dy = a.y - a.y0;
+      const largo = Math.hypot(dx, dy);
+      if(largo < 18 || dy > -10) return null;
+      const k = 4.4 * Math.min(1, 175 / largo);
+      return { vx: dx * k, vy: dy * k };
+    };
+
+    const onDown = (e) => {
+      if(over || arrow) return;
+      const p = pointerPos(cv, e);
+      drag = { x0:p.x, y0:p.y, x:p.x, y:p.y };
+      e.preventDefault();
+    };
+    const onMove = (e) => {
+      if(!drag) return;
+      const p = pointerPos(cv, e);
+      drag.x = p.x; drag.y = p.y;
+      e.preventDefault();
+    };
+    const onUp = (e) => {
       if(!drag || arrow) return;
-      const dx = bow.x - drag.x, dy = bow.y - drag.y;
+      const p = pointerPos(cv, e);
+      drag.x = p.x; drag.y = p.y;
+      const v = flecha(drag);
       drag = null;
-      const pow = Math.hypot(dx, dy);
-      if(pow < 16) return;
-      const k = 4.2 * Math.min(1, 160 / pow);            // se tensa hasta cierto tope
-      arrow = { x:bow.x, y:bow.y, vx:dx * k, vy:dy * k, done:false };
+      if(!v) return;
+      arrow = { x:bow.x, y:bow.y, vx:v.vx, vy:v.vy, done:false };
       beep(360, .07); vibrate(18);
     };
     cv.addEventListener('pointerdown', onDown, { passive:false });
-    cv.addEventListener('pointermove', onMove, { passive:false });
-    cv.addEventListener('pointerup', onUp);
+    /* en la ventana: si sueltas fuera del canvas, la flecha se quedaba tensada */
+    window.addEventListener('pointermove', onMove, { passive:false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
 
     const hit = (d) => {
       for(const [r, pts] of RINGS) if(d <= r) return pts;
@@ -95,13 +118,28 @@ export default (ctx) => duelGame(ctx, {
       g.strokeStyle = '#a3e635'; g.lineWidth = 4;
       g.beginPath(); g.arc(bow.x, bow.y, 20, -1.1, 1.1); g.stroke();
       if(drag){
-        g.strokeStyle = 'rgba(255,255,255,.55)'; g.setLineDash([4, 6]); g.lineWidth = 2;
-        g.beginPath(); g.moveTo(bow.x, bow.y);
-        g.lineTo(bow.x + (bow.x - drag.x) * 1.6, bow.y + (bow.y - drag.y) * 1.6);
-        g.stroke(); g.setLineDash([]);
-        g.fillStyle = '#a3e635';
-        g.fillRect(12, h - 14 - Math.min(160, Math.hypot(bow.x - drag.x, bow.y - drag.y)), 8,
-                   Math.min(160, Math.hypot(bow.x - drag.x, bow.y - drag.y)));
+        const v = flecha(drag);
+        if(v){
+          /* la trayectoria prevista, ya contando el viento */
+          g.strokeStyle = 'rgba(255,255,255,.55)'; g.setLineDash([4, 7]); g.lineWidth = 2;
+          g.beginPath(); g.moveTo(bow.x, bow.y);
+          let px = bow.x, py = bow.y, pvx = v.vx, pvy = v.vy;
+          for(let k = 0; k < 55; k++){
+            pvy += G * .022; pvx += wind * .022;
+            px += pvx * .022; py += pvy * .022;
+            if(py > h || px < 0 || px > w) break;
+            g.lineTo(px, py);
+          }
+          g.stroke(); g.setLineDash([]);
+          const fuerza = Math.min(1, Math.hypot(v.vx, v.vy) / 780);
+          g.fillStyle = '#a3e635';
+          g.fillRect(12, h - 14 - 60 * fuerza, 7, 60 * fuerza);
+        }
+        g.strokeStyle = 'rgba(255,255,255,.22)'; g.lineWidth = 1.5;
+        g.beginPath(); g.moveTo(drag.x0, drag.y0); g.lineTo(drag.x, drag.y); g.stroke();
+      }else if(!arrow && left === ARROWS){
+        g.fillStyle = 'rgba(255,255,255,.6)'; g.font = '13px system-ui'; g.textAlign = 'center';
+        g.fillText('desliza hacia la diana para disparar', w / 2, h - 16);
       }
       if(arrow){
         const a = Math.atan2(arrow.vy, arrow.vx);
@@ -130,6 +168,11 @@ export default (ctx) => duelGame(ctx, {
       else newTarget();
     }
 
-    return { destroy(){ cancelAnimationFrame(raf); } };
+    return { destroy(){
+      cancelAnimationFrame(raf);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    } };
   },
 });
