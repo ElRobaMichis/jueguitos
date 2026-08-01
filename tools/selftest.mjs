@@ -332,6 +332,72 @@ async function probarCarreras(){
 }
 if(!only) fails += await probarCarreras();
 
+/* --- red: fantasmas retenidos, acuses y reintentos ---
+   Los brokers públicos guardan lo retenido para siempre; con códigos de 4
+   dígitos, una sala "nueva" casi siempre pisa una vieja. Y un mensaje fiable
+   sin acuse se reenviaba en cada reconexión... para siempre. */
+async function probarRed(){
+  const { Net } = await import('../js/net/net.js');
+  const mk = () => {
+    const n = new Net();
+    n._alive = true;
+    n.me = { id:'yo', name:'Yo', joinedAt:1 };
+    n.sid = 'sesA';
+    n.base = 'b'; n.tMsg = 'b/m'; n.tState = 'b/s';
+    n.tPres = (x) => 'b/p/' + x; n.tPick = (x) => 'b/k/' + x;
+    n._sealAndSend = () => {};                     // sin red de verdad
+    n.publish = function(env){ (this.enviados ||= []).push(env); };
+    return n;
+  };
+  let mal = 0;
+
+  { // una despedida retenida de un desconocido NO crea fantasmas
+    const n = mk();
+    n._route('b/p/viejo', { t:'p', d:{ id:'viejo', online:false } });
+    if(n.peers.size !== 0){ mal++; console.log('  ✗ la despedida vieja creó un fantasma'); }
+  }
+  { // una elección retenida de un desconocido tampoco... pero se aplica si aparece
+    const n = mk();
+    n._route('b/k/viejo', { t:'k', f:'viejo', s:'z', n:9, d:{ pick:'gato' } });
+    if(n.peers.size !== 0){ mal++; console.log('  ✗ la elección vieja creó un fantasma'); }
+    n._route('b/p/viejo', { t:'p', d:{ id:'viejo', name:'R', online:true, ts:Date.now() } });
+    if(n.peers.get('viejo')?.pick !== 'gato'){ mal++; console.log('  ✗ la elección pendiente no se aplicó'); }
+  }
+  { // si la acabo de oír, una despedida rezagada de otro relay no la desconecta
+    const n = mk();
+    n._route('b/p/ella', { t:'p', d:{ id:'ella', online:true, ts:Date.now() } });
+    n._route('b/p/ella', { t:'p', d:{ id:'ella', online:false } });
+    if(!n.peers.get('ella')?.online){ mal++; console.log('  ✗ una despedida rezagada la desconectó'); }
+  }
+  { // de las copias retenidas de presencia gana la más nueva, no la última en llegar
+    const n = mk();
+    n._route('b/p/ella', { t:'p', d:{ id:'ella', name:'Nueva', online:true, ts:2000 } });
+    n._route('b/p/ella', { t:'p', d:{ id:'ella', name:'Vieja', online:true, ts:1000 } });
+    if(n.peers.get('ella')?.name !== 'Nueva'){ mal++; console.log('  ✗ una copia vieja pisó a la nueva'); }
+  }
+  { // el acuse vacía la bandeja de reintentos
+    const n = mk();
+    n.publishReliable({ t:'start', d:{} });
+    const id = n._outbox[0]?.env.i;
+    if(!id || (n.enviados || []).length !== 1){ mal++; console.log('  ✗ el fiable no salió al instante'); }
+    n._route('b/m', { t:'ak', f:'ella', s:'x', n:1, d:{ id } });
+    if(n._outbox.length !== 0){ mal++; console.log('  ✗ el acuse no vació la bandeja'); }
+  }
+  { // los fiables se confirman SIEMPRE, aunque lleguen repetidos
+    const n = mk();
+    let entregas = 0;
+    n.on('msg:chat', () => entregas++);
+    n._route('b/m', { t:'chat', f:'ella', s:'x', n:2, i:'ella:1', d:{ text:'hola' } });
+    n._route('b/m', { t:'chat', f:'ella', s:'x', n:3, i:'ella:1', d:{ text:'hola' } });
+    const aks = (n.enviados || []).filter(e => e.t === 'ak').length;
+    if(aks !== 2){ mal++; console.log('  ✗ no confirma los reenvíos (' + aks + ')'); }
+    if(entregas !== 1){ mal++; console.log('  ✗ el repetido se entregó dos veces'); }
+  }
+  console.log(`${mal ? '✗' : '✓'} red         sin fantasmas de salas viejas; fiables con acuse y sin duplicar`);
+  return mal ? 1 : 0;
+}
+if(!only) fails += await probarRed();
+
 /* --- el canal de juego no debe quedarse pegado a un relay mudo --- */
 async function probarCanal(){
   const { Net } = await import('../js/net/net.js');

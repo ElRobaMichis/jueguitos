@@ -3,22 +3,36 @@
 
    Cómo funciona
    -------------
-   La app es 100% estática (sirve en GitHub Pages). La "sala" vive en un broker
-   MQTT público sobre WebSocket seguro (wss). MQTT es ideal para conexiones
-   móviles inestables: paquetes minúsculos (2–4 bytes de cabecera), keepalive
-   configurable, QoS 1 con reintento automático, "last will" (avisa cuando
-   alguien se cae) y mensajes "retained" (el que se reconecta recibe al
+   La app es 100% estática (sirve en GitHub Pages). La "sala" vive en brokers
+   MQTT públicos sobre WebSocket seguro (wss). MQTT es ideal para conexiones
+   móviles inestables: paquetes minúsculos, keepalive, "last will" (avisa
+   cuando alguien se cae) y mensajes "retained" (quien se reconecta recibe al
    instante el estado actual sin pedir nada).
 
-   Se conecta a los TRES brokers a la vez y anuncia su presencia en todos, de
-   modo que los dos jugadores se encuentran aunque cada teléfono alcance unos
-   relays distintos. El juego se va por aquel donde estén los dos.
+   Nos conectamos a los TRES brokers a la vez:
+     - presencia, elección de juego y estado del tablero van por TODOS;
+     - los mensajes fiables (jugadas, chat, revancha) van por TODOS y se
+       REINTENTAN cada ~3 s hasta recibir su acuse — así no se pierden aunque
+       un relay se muera justo en ese momento;
+     - sólo el chorro rápido (instantáneas del ping pong, trazos del dibujo)
+       va por un único canal "activo", vigilado: si se queda mudo 4 s
+       habiendo otro relay vivo, se cambia.
 
    Topics (base = jgts/1/<hash del código>):
-     <base>/m        mensajes efímeros  (chat, emojis, jugadas, ping)
+     <base>/m        mensajes efímeros  (chat, emojis, jugadas, acuses)
      <base>/p/<id>   presencia          (retained + last will)
      <base>/k/<id>   juego elegido      (retained)
      <base>/s        estado del juego   (retained, lo publica el anfitrión)
+
+   Lecciones que este archivo ya pagó caras (no repetirlas):
+     - Los brokers públicos guardan lo retenido PARA SIEMPRE. Con códigos de
+       4 dígitos, una sala "nueva" casi siempre pisa una vieja: nada de crear
+       jugadores a partir de mensajes retenidos; los desconocidos se ignoran
+       y a los 30 s se limpia su basura del broker.
+     - Las 3 copias retenidas de presencia llegan en orden aleatorio: se
+       ordenan por su fecha, y una despedida no vale si acabamos de oírlo.
+     - Un mensaje fiable sin acuse se reenviaba en cada reconexión… semanas
+       después: un 'start' viejo lanzaba un juego en un solo teléfono.
 
    Privacidad: el topic se deriva de un hash del código, y todo el contenido
    va cifrado con AES-GCM usando una llave derivada del propio código. El
@@ -37,6 +51,9 @@ const BROKERS = [
 const CONNECT_MS   = 9000;    // tiempo máximo para que un relay conteste
 const STALE_MS     = 75000;   // margen antes de dar por caído a alguien callado
 const HEARTBEAT_MS = 25000;   // latido de cortesía (el broker ya vigila con keepalive)
+const RETRY_MS     = 2900;    // reintento de mensajes fiables sin acuse
+const OUTBOX_TTL   = 300000;  // 5 min: después, un mensaje fiable caduca
+const GC_MS        = 30000;   // limpieza de fantasmas retenidos de sesiones viejas
 
 /* La librería MQTT pesa 96 KB comprimidos: 4 veces más que toda la app. Se
    baja al entrar a una sala, no al abrir la página, para que con señal mala
@@ -81,18 +98,21 @@ async function deriveKey(code){
 export class Net extends Emitter {
   constructor(){
     super();
-    this.client   = null;
+    this.client   = null;          // canal activo (compatibilidad)
     this.code     = null;
     this.me       = null;          // { id, name, joinedAt }
-    this.peers    = new Map();     // id -> { id, name, joinedAt, online, pick, lastSeen }
+    this.peers    = new Map();     // id -> { id, name, joinedAt, online, pick, lastSeen, presTs }
     this.status   = 'idle';        // idle | connecting | online | offline
     this.seq      = 0;
-    this._seen    = new Set();     // ids de mensajes ya procesados (dedupe)
+    this._seen    = new Set();     // marcas f#sesión#n: copias del mismo envío
     this._seenQ   = [];
-    this._outbox  = [];            // mensajes fiables aún no confirmados por el peer
+    this._seenI   = new Set();     // ids de mensajes fiables ya procesados
+    this._seenIQ  = [];
+    this._outbox  = [];            // fiables sin acuse: { env, t0, last, tries }
+    this._pendingPicks = new Map();// elecciones retenidas de gente aún no vista
+    this._ghosts  = new Set();     // despedidas retenidas de gente aún no vista
     this._sendQ   = Promise.resolve();
     this._recvQ   = Promise.resolve();
-    this.rtt      = null;
   }
 
   /* ---------------------------------------------------------------- join -- */
@@ -101,6 +121,15 @@ export class Net extends Emitter {
     this.me   = { id, name, joinedAt };
     this.key  = await deriveKey(code);
 
+    /* Borrón y cuenta nueva: si se entra a una sala sin haber salido bien de
+       la anterior, nada de arrastrar jugadores, marcas ni pendientes viejos. */
+    this.peers.clear();
+    this._outbox = [];
+    this._seen.clear();  this._seenQ.length = 0;
+    this._seenI.clear(); this._seenIQ.length = 0;
+    this._pendingPicks = new Map();
+    this._ghosts = new Set();
+
     const hash  = await sha256Hex(code + SALT);
     this.base   = `${PROTO}/${hash.slice(0, 20)}`;
     this.tMsg   = `${this.base}/m`;
@@ -108,9 +137,10 @@ export class Net extends Emitter {
     this.tPres  = (pid) => `${this.base}/p/${pid}`;
     this.tPick  = (pid) => `${this.base}/k/${pid}`;
 
-    /* Identificador de esta pestaña. Sirve para distinguir "soy yo mismo" de
-       "hay otra copia de la app con mi mismo id de dispositivo" (pasa si abres
-       la app dos veces en el mismo navegador: comparten almacenamiento). */
+    /* Identificador de esta pestaña. Distingue "soy yo mismo" de "hay otra
+       copia de la app con mi mismo id de dispositivo" (dos pestañas del mismo
+       navegador comparten almacenamiento), y además hace únicas las marcas
+       anti-repetidos entre sesiones. */
     this.sid = Math.random().toString(36).slice(2, 10);
 
     this._will = await this._seal({ t:'p', d:{ ...this.me, online:false, sid:this.sid } });
@@ -118,32 +148,32 @@ export class Net extends Emitter {
 
     await ensureMqtt();                            // la librería se baja al entrar, no al abrir
 
-    /* Nos conectamos a LOS TRES brokers a la vez.
-       Antes cada teléfono recordaba "el último que me funcionó" y elegía por su
-       cuenta: si a uno le tocaba EMQX y al otro HiveMQ, los dos se veían en
-       verde… y no se encontraban nunca, porque estaban en relays distintos.
-       Ahora anunciamos nuestra presencia en todos y el juego se va por aquel
-       donde estén los dos (el de menor índice, así los dos eligen el mismo). */
     this.links = BROKERS.map((url, i) => this._openLink(url, i));
     this.active = null;
 
-    /* Latido de cortesía. Quien avisa de verdad si alguien se cae es el broker
-       (last will), y cualquier jugada refresca el "lastSeen"; por eso va lento:
-       a 5 s se gastaban ~180 KB por hora de estar en la sala sin jugar. */
+    /* Latido de cortesía por TODOS los relays: mantiene fresco el "lastSeen"
+       y le da al vigilante con qué comparar qué relay sigue sirviendo. */
     clearInterval(this._hb);
     this._hb = setInterval(() => {
       if(this.status !== 'online') return;
       this._checkStale();
-      /* El latido va por TODOS los relays: así cada uno demuestra cada tanto
-         que sigue sirviendo para hablar con la otra persona, y el vigilante
-         puede notar cuál se quedó mudo. */
       if(Date.now() - (this._lastOut || 0) > HEARTBEAT_MS - 1000)
         this.publish({ t:'hb', d:{} }, { qos: 0, todos: true });
     }, HEARTBEAT_MS);
 
-    /* Vigilante rápido del canal de juego. */
+    /* Vigilante del canal rápido + reintentos de los mensajes fiables. */
     clearInterval(this._wd);
-    this._wd = setInterval(() => { if(this._alive) this._watchdog(); }, 3000);
+    this._wd = setInterval(() => {
+      if(!this._alive) return;
+      this._watchdog();
+      this._retryOutbox();
+    }, 3000);
+
+    /* Basura de sesiones pasadas: elecciones y despedidas retenidas de gente
+       que nunca dio señales de vida se limpian del broker pasado un rato.
+       Sin esto, una sala "nueva" heredaba fantasmas de salas viejas. */
+    clearTimeout(this._gc);
+    this._gc = setTimeout(() => this._gcGhosts(), GC_MS);
   }
 
   /** Abre (y mantiene abierto) un broker. mqtt.js reintenta solo si se cae. */
@@ -188,17 +218,11 @@ export class Net extends Emitter {
     return link;
   }
 
-  /** Canal de juego: el primer relay donde nos hayamos oído hace poco.
-      "Hace poco" importa: si sólo miráramos "aquí la vi alguna vez", el canal
-      se quedaba pegado a un relay que la otra persona ya abandonó. La
-      presencia sigue llegando por los demás (así que los dos se ven en verde)
-      pero las jugadas caen al vacío: el juego se congela sin avisar. */
+  /** Canal rápido: el relay por el que nos hayamos oído más recientemente.
+      No hace falta que los dos usen el mismo: cada quien escucha en los tres. */
   _pickActive(){
     const links = (this.links || []).filter(l => l.up);
     const antes = this.active?.url;
-    /* No hace falta que los dos usemos el mismo relay: cada quien escucha en
-       los tres, así que basta con hablar por uno donde la otra persona esté.
-       Elegimos aquel por el que nos hayamos oído más recientemente. */
     const oidos = links.filter(l => l.sawPeer)
                        .sort((a, b) => (b.lastPeer || 0) - (a.lastPeer || 0) || a.i - b.i);
     this.active = oidos[0] || links[0] || null;
@@ -230,71 +254,102 @@ export class Net extends Emitter {
     this._setStatus(up ? 'online' : 'connecting');
   }
 
-  /** Los mensajes pequeños y retenidos van a TODOS: así nos encontramos
-      aunque cada quien alcance relays distintos. */
   _allUp(){ return (this.links || []).filter(l => l.up).map(l => l.client); }
 
   leave(){
     this._alive = false;
     clearInterval(this._hb);
     clearInterval(this._wd);
+    clearTimeout(this._gc);
     for(const l of this.links || []){
       try{
         // Limpia los retained propios para que la sala quede vacía de verdad.
-        l.client?.publish(this.tPres(this.me.id), '', { qos: 1, retain: true });
-        l.client?.publish(this.tPick(this.me.id), '', { qos: 1, retain: true });
-        l.client?.end(true);
+        l.client?.publish(this.tPres(this.me.id), '', { qos: 0, retain: true });
+        l.client?.publish(this.tPick(this.me.id), '', { qos: 0, retain: true });
+        /* Cierre SUAVE: espera a que salgan los paquetes de limpieza. Con el
+           cierre forzado se quedaban sin enviar, y la elección retenida
+           sobrevivía como fantasma para la siguiente sala con ese código. */
+        l.client?.end(false);
       }catch{}
     }
     this.links = [];
     this.active = null;
     this.client = null;
     this.peers.clear();
+    this._outbox = [];
+    this._pendingPicks.clear();
+    this._ghosts.clear();
     this._setStatus('idle');
   }
 
   /* --------------------------------------------------------------- envío -- */
 
-  /** Publica un sobre en el topic de mensajes. */
+  /** Publica un sobre en el topic de mensajes.
+      `todos` = por cada relay conectado; si no, sólo por el canal rápido. */
   publish(env, { qos = 0, todos = false } = {}){
     env.f = this.me.id;
+    env.s = this.sid;                          // sesión: hace únicas las marcas
     env.n = ++this.seq;
     this._sealAndSend(this.tMsg, env, { qos, retain: false }, todos);
   }
 
-  /** Mensaje fiable: se reintenta si la otra persona estaba desconectada. */
+  /** Mensaje fiable: viaja por TODOS los relays y se reintenta cada ~3 s
+      hasta que llegue su acuse. Chat, jugadas, revancha, inicio y salida. */
   publishReliable(env){
     env.i = env.i || (this.me.id + ':' + (++this.seq));
-    this._outbox.push(env);
-    if(this._outbox.length > 40) this._outbox.shift();
-    this.publish(env, { qos: 1 });
+    this._outbox.push({ env: { ...env }, t0: Date.now(), last: 0, tries: 0 });
+    if(this._outbox.length > 60) this._outbox.shift();
+    this._retryOutbox(true);
   }
 
-  /** Estado del juego (retained): quien se reconecte lo recibe de inmediato.
-      Va a todos los relays: es chico y así se recupera desde cualquiera. */
+  _retryOutbox(soloNuevos = false){
+    const ahora = Date.now();
+    this._outbox = this._outbox.filter(o => ahora - o.t0 < OUTBOX_TTL && o.tries < 90);
+    for(const o of this._outbox){
+      if(soloNuevos ? o.last : (ahora - o.last < RETRY_MS)) continue;
+      o.last = ahora;
+      o.tries++;
+      this.publish({ ...o.env }, { qos: 1, todos: true });
+    }
+  }
+
+  /** Reenvío inmediato de todo lo pendiente (reconexión, peer que vuelve). */
+  _flushOutbox(){
+    for(const o of this._outbox) o.last = 0;
+    this._retryOutbox();
+  }
+
+  ackDelivered(msgId){
+    if(!msgId) return;
+    this._outbox = this._outbox.filter(o => o.env.i !== msgId);
+  }
+
+  /** Estado del juego (retained, todos los relays): quien se reconecte lo
+      recibe al instante desde cualquiera. */
   publishState(state){
-    this._sealAndSend(this.tState, { t:'s', f:this.me.id, d:state, n:++this.seq },
-                      { qos:1, retain:true }, true);
+    this._sealAndSend(this.tState,
+      { t:'s', f:this.me.id, s:this.sid, n:++this.seq, d:state },
+      { qos:1, retain:true }, true);
   }
   clearState(){
     for(const c of this._allUp()) try{ c.publish(this.tState, '', { qos: 1, retain: true }); }catch{}
   }
 
-  /** Juego seleccionado en el menú (retained por jugador, en todos los relays). */
+  /** Juego seleccionado en el menú (retained por jugador, todos los relays). */
   publishPick(gameId){
     if(this.me) this.me.pick = gameId;
-    this._sealAndSend(this.tPick(this.me.id), { t:'k', f:this.me.id, n:++this.seq, d:{ pick:gameId, name:this.me.name } },
-                      { qos:1, retain:true }, true);
+    this._sealAndSend(this.tPick(this.me.id),
+      { t:'k', f:this.me.id, s:this.sid, n:++this.seq, d:{ pick:gameId, name:this.me.name } },
+      { qos:1, retain:true }, true);
   }
 
   _announce(){
     this._sealAndSend(this.tPres(this.me.id),
-      { t:'p', f:this.me.id, n:++this.seq, d:{ ...this.me, online:true, ts:Date.now(), sid:this.sid } },
+      { t:'p', f:this.me.id, s:this.sid, n:++this.seq,
+        d:{ ...this.me, online:true, ts:Date.now(), sid:this.sid } },
       { qos:1, retain:true }, true);
   }
 
-  /** `todos` = mándalo por cada relay conectado (presencia, elección, estado).
-      Si no, va sólo por el canal activo (chat y jugadas). */
   _sealAndSend(topic, obj, opts, todos = false){
     // Cola secuencial: el cifrado es asíncrono y queremos preservar el orden.
     this._lastOut = Date.now();
@@ -325,18 +380,15 @@ export class Net extends Emitter {
     return JSON.parse(dec.decode(pt));
   }
 
-  _flushOutbox(){
-    for(const env of this._outbox) this.publish({ ...env }, { qos: 1 });
-  }
-  ackDelivered(msgId){
-    this._outbox = this._outbox.filter(m => m.i !== msgId);
-  }
-
   /* ------------------------------------------------------------ recepción -- */
 
   _onRaw(topic, payload, link){
     if(!payload || payload.length === 0){        // retained borrado
       if(topic.includes('/p/')) this._dropPeer(topic.split('/p/')[1]);
+      if(topic.includes('/k/')){
+        const p = this.peers.get(topic.split('/k/')[1]);
+        if(p && p.pick != null){ p.pick = null; this.emit('pick', p); this.emit('peers', this.peerList()); }
+      }
       if(topic === this.tState) this.emit('state', null);
       return;
     }
@@ -346,20 +398,22 @@ export class Net extends Emitter {
       catch{ return; }                            // no es de nuestra sala (código distinto)
       if(!env) return;
 
-      /* Antes de descartar copias: apuntar que por ESTE relay sí nos llegó algo
-         suyo. Si sólo lo marcáramos con la copia que sobrevive al filtro, los
-         otros relays parecerían muertos aunque estuvieran perfectos. */
+      /* Antes de descartar copias: apuntar que por ESTE relay sí nos llegó
+         algo suyo (el vigilante compara la frescura de cada relay). */
       const suyo = (env.f && env.f !== this.me.id) ||
                    (topic.startsWith(this.base + '/p/') && env.d?.id !== this.me.id);
       if(link && suyo){ link.lastPeer = Date.now(); link.sawPeer = true; }
 
-      /* Lo retenido llega por los tres relays: procesamos sólo la primera copia. */
+      /* Un mismo envío llega por hasta tres relays: sólo la primera copia.
+         La marca lleva la SESIÓN: sin ella, un mensaje retenido de una sesión
+         vieja podía hacer descartar uno legítimo de la actual con el mismo
+         número. */
       if(env.f && env.f !== this.me.id && env.n != null){
-        const marca = env.f + '#' + env.n;
+        const marca = env.f + '#' + (env.s || '') + '#' + env.n;
         if(this._seen.has(marca)) return;
         this._seen.add(marca);
         this._seenQ.push(marca);
-        if(this._seenQ.length > 400) this._seen.delete(this._seenQ.shift());
+        if(this._seenQ.length > 1500) this._seen.delete(this._seenQ.shift());
       }
       try{ this._route(topic, env, link); }
       catch(e){ console.warn('[net] route', e); }
@@ -376,18 +430,44 @@ export class Net extends Emitter {
         if(d.sid && d.sid !== this.sid && d.online) this.emit('same-device');
         return;
       }
-      /* Aquí está: por este relay sí nos alcanzamos. */
-      if(link && d.online && !link.sawPeer){ link.sawPeer = true; this._pickActive(); }
       const prev = this.peers.get(d.id);
+
+      if(!d.online){
+        /* Una despedida retenida sólo vale para alguien que conocimos: los
+           brokers guardan despedidas de sesiones viejas para siempre y
+           aplicarlas creaba fantasmas "desconectados" en salas nuevas. */
+        if(!prev){ this._ghosts.add(d.id); return; }
+        /* Y si lo oímos hace nada, la despedida es rezagada de otro relay. */
+        if(Date.now() - (prev.lastSeen || 0) < 10000) return;
+        if(prev.online){
+          prev.online = false;
+          this.emit('peer-offline', prev);
+          this.emit('peers', this.peerList());
+        }
+        return;
+      }
+
+      /* Está en línea. De las copias retenidas gana la más nueva. */
+      const ts = d.ts || 0;
+      if(prev && ts && (prev.presTs || 0) > ts) return;
       const peer = {
         ...(prev || {}), id:d.id, name:d.name, joinedAt:d.joinedAt,
-        online:!!d.online, lastSeen:Date.now(),
+        online:true, lastSeen:Date.now(), presTs:ts,
       };
-      this.peers.set(d.id, peer);
-      if(!prev || prev.online !== peer.online){
-        this.emit(peer.online ? 'peer-online' : 'peer-offline', peer);
-        if(peer.online) this._flushOutbox();     // reenvía lo que no recibió
+      /* Si su elección llegó antes que su presencia, se aplica ahora. */
+      let pickAplicado = false;
+      if(this._pendingPicks.has(d.id)){
+        peer.pick = this._pendingPicks.get(d.id);
+        this._pendingPicks.delete(d.id);
+        pickAplicado = true;
       }
+      this.peers.set(d.id, peer);
+      this._ghosts.delete(d.id);
+      if(!prev || !prev.online){
+        this.emit('peer-online', peer);
+        this._flushOutbox();                    // reenvía lo que no recibió
+      }
+      if(pickAplicado) this.emit('pick', peer);
       this.emit('peers', this.peerList());
       return;
     }
@@ -396,10 +476,15 @@ export class Net extends Emitter {
     if(topic.startsWith(this.base + '/k/')){
       const id = topic.split('/k/')[1];
       if(id === this.me.id) return;
-      const peer = this.peers.get(id) || { id, name:env.d?.name, online:true };
+      const peer = this.peers.get(id);
+      if(!peer){
+        /* No inventamos jugadores por una elección retenida (los brokers las
+           guardan de sesiones viejas). Se aplica si aparece su presencia. */
+        this._pendingPicks.set(id, env.d?.pick ?? null);
+        return;
+      }
       peer.pick = env.d?.pick ?? null;
-      this.peers.set(id, peer);
-      this._alive2(peer);                          // si nos habla, está ahí
+      if(env.d?.name) peer.name = env.d.name;
       this.emit('pick', peer);
       this.emit('peers', this.peerList());
       return;
@@ -416,11 +501,18 @@ export class Net extends Emitter {
 
     /* --- mensajes efímeros --- */
     if(env.f === this.me.id) return;              // eco propio
-    if(env.i){                                    // dedupe de mensajes fiables
-      if(this._seen.has(env.i)) return;
-      this._seen.add(env.i);
-      this._seenQ.push(env.i);
-      if(this._seenQ.length > 300) this._seen.delete(this._seenQ.shift());
+
+    /* acuse: el emisor deja de reintentar ese mensaje */
+    if(env.t === 'ak'){ this.ackDelivered(env.d?.id); return; }
+
+    if(env.i){
+      /* Se confirma SIEMPRE, aunque sea una copia repetida: si el primer
+         acuse se perdió, el emisor seguiría reintentando eternamente. */
+      this.publish({ t:'ak', d:{ id: env.i } }, { todos: true });
+      if(this._seenI.has(env.i)) return;
+      this._seenI.add(env.i);
+      this._seenIQ.push(env.i);
+      if(this._seenIQ.length > 1500) this._seenI.delete(this._seenIQ.shift());
     }
 
     const peer = this.peers.get(env.f);
@@ -444,17 +536,17 @@ export class Net extends Emitter {
   _dropPeer(id){
     if(this.peers.has(id)){
       const p = this.peers.get(id);
+      if(!p.online) return;
       p.online = false;
       this.emit('peer-offline', p);
       this.emit('peers', this.peerList());
     }
   }
 
-  /* Quién está conectado lo dice el "last will" del broker, que es exacto y
-     salta a los ~45 s de que muere el socket. Esto es sólo una red de
-     seguridad para conexiones zombis, con una ventana holgada: si fuera
-     corta, bastaría con que el otro mirara otra app un momento (el navegador
-     frena los temporizadores en segundo plano) para verlo como desconectado. */
+  /* Quién está conectado lo dice el "last will" del broker (~45 s tras morir
+     el socket). Esto es sólo la red de seguridad para conexiones zombis, con
+     ventana holgada: el navegador congela los temporizadores en segundo
+     plano y una ventana corta desconectaría a quien sólo miró otra app. */
   _checkStale(){
     const now = Date.now();
     let changed = false;
@@ -462,6 +554,24 @@ export class Net extends Emitter {
       if(p.online && now - (p.lastSeen || 0) > STALE_MS){ p.online = false; changed = true; this.emit('peer-offline', p); }
     }
     if(changed) this.emit('peers', this.peerList());
+  }
+
+  /** Borra del broker la basura retenida de sesiones viejas: elecciones y
+      despedidas de identidades que nunca dieron señales de vida aquí. */
+  _gcGhosts(){
+    if(!this._alive) return;
+    const basura = new Set([...this._pendingPicks.keys(), ...this._ghosts]);
+    for(const id of basura){
+      if(this.peers.get(id)?.online) continue;
+      for(const c of this._allUp()){
+        try{
+          c.publish(this.tPick(id), '', { qos:0, retain:true });
+          c.publish(this.tPres(id), '', { qos:0, retain:true });
+        }catch{}
+      }
+      this._pendingPicks.delete(id);
+    }
+    this._ghosts.clear();
   }
 
   _setStatus(s){
@@ -480,7 +590,7 @@ export class Net extends Emitter {
       if(l.client.connected) alguno = true;
       else try{ l.client.reconnect(); }catch{}
     }
-    if(alguno) this._announce();
+    if(alguno){ this._announce(); this._flushOutbox(); }
   }
 
   peerList(){ return [...this.peers.values()]; }

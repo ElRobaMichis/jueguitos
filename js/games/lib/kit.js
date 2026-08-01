@@ -260,12 +260,14 @@ export function raceGame(ctx, def){
 
   const api = {
     P,
-    /** Cuánto llevo, para que el otro vea la carrera. */
+    /** Cuánto llevo, para que el otro vea la carrera. Va por todos los
+        relays: es diminuto y así el marcador del rival no se congela si el
+        canal rápido está en plena mudanza. */
     progress(n, { force = false } = {}){
       const ahora = performance.now();
       if(!force && ahora - ultimo < 500) return;
       ultimo = ahora;
-      ctx.send({ pr: n });
+      ctx.send({ pr: n }, { todos: true });
     },
     gano(texto){ resolver(true, texto); },
     perdi(texto){ resolver(false, texto); },

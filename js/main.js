@@ -14,7 +14,7 @@ import {
 const EMOJIS = ['❤️', '😂', '😮', '😘', '😭', '🔥', '👏', '😜'];
 /* Se muestra abajo en la pantalla de inicio: si algo falla, sirve para saber
    qué versión tiene cada teléfono. Cámbialo junto con VERSION en sw.js. */
-const VERSION = 'v14';
+const VERSION = 'v15';
 
 const app = {
   code: null,
@@ -110,7 +110,11 @@ async function enterRoom(code, name){
     },
   });
 
-  wireNet();
+  /* Los manejadores se registran UNA sola vez: `net` es un singleton y antes
+     se apilaban en cada sala (salir y volver a entrar duplicaba avisos,
+     arranques de partida, todo). */
+  if(!app.wired){ app.wired = true; wireNet(); }
+  app.avisoMismoEquipo = false;
   await net.join({ code, name, id, joinedAt: app.me.joinedAt });
 }
 
@@ -128,10 +132,9 @@ function wireNet(){
 
   /* Dos copias de la app en el mismo navegador comparten identidad y nunca se
      verían entre sí. Antes fallaba en silencio; ahora se avisa. */
-  let avisoMismoEquipo = false;
   net.on('same-device', () => {
-    if(avisoMismoEquipo) return;
-    avisoMismoEquipo = true;
+    if(app.avisoMismoEquipo) return;
+    app.avisoMismoEquipo = true;
     $('#lobby-hint').textContent =
       'Están los dos en el mismo navegador, por eso no se ven. Abre una en otro teléfono (o en una ventana privada).';
     toast('⚠️ Las dos ventanas son del mismo navegador: no pueden verse entre sí', 6000);
@@ -151,9 +154,8 @@ function wireNet(){
     maybeStart();
   });
 
-  /* chat */
+  /* chat (el acuse lo manda la capa de red sola, para TODOS los fiables) */
   net.on('msg:chat', (d, env) => {
-    net.publish({ t:'ack', d:{ id: env.i } });
     const msg = { id: env.i, from:'them', text:d.text, ts:d.ts || Date.now() };
     const log = store.pushChat(app.code, msg);
     if(log.at(-1) !== msg) return;                 // era un reenvío repetido
@@ -165,8 +167,6 @@ function wireNet(){
       beep(660, 0.06); vibrate(25);
     }
   });
-  net.on('msg:ack', (d) => net.ackDelivered(d.id));
-
   /* reacciones */
   net.on('msg:emoji', (d) => { flyEmoji(d.e, 3); beep(1200, 0.05); vibrate(20); });
 
