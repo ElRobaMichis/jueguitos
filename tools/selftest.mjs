@@ -168,11 +168,12 @@ export { playOne, FakeNode };
 
 /* ---------------------------------------------------------------- runner -- */
 const RUNS = 3;
-const TURN_GAMES = ['gato','conecta4','reversi','damas','domino','escaleras','memorama',
-                    'buscaminas','batalla','ludo','ahorcado','basta','trivia','verdadreto','preguntas'];
+const TURN_GAMES = ['gato','conecta4','reversi','damas','domino','escaleras',
+                    'batalla','ludo','ahorcado','basta','trivia','verdadreto','preguntas'];
 /* Juegos en vivo / de puntería: aquí sólo comprobamos que montan y se
    destruyen sin reventar (el juego en sí depende de canvas y del reloj). */
-const REALTIME = ['pingpong','airhockey','basket','arqueria','ritmo','taprace','globos','pictionary'];
+const REALTIME = ['pingpong','airhockey','basket','arqueria','ritmo','taprace','globos','pictionary',
+                  'memorama','buscaminas'];   // ahora son carreras, cada quien en su tablero
 
 /* Presupuesto de clics. Damas y Ludo necesitan muchos más porque casi todas
    las casillas son pulsables y el robot pulsa al azar. */
@@ -262,6 +263,96 @@ async function probarLoteria(){
   return okHonesto && okTrampa ? 0 : 1;
 }
 if(!only) fails += await probarLoteria();
+
+/* --- carreras: memorama y buscaminas ---
+   Los dos reciben el MISMO tablero y juegan a la vez; gana quien termine
+   primero, y en buscaminas pierdes en el acto si pisas tres minas. */
+async function probarCarreras(){
+  let mal = 0;
+  function dupla(seed){
+    const H = { msg:[] }, G = { msg:[] };
+    const dar = (d, x, from) => x.msg.forEach(f => f(structuredClone(d), from));
+    let fin = null;
+    const mkRng = () => { let s = seed >>> 0 || 1;
+      return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; };
+    const mk = (isHost, me, peer, mine, their) => ({
+      el:new FakeNode('div'), me, peer, isHost, seed, rng:mkRng(), random:mkRng(),
+      send:d => dar(d, their, me.id), sendReliable:d => dar(d, their, me.id),
+      onMsg:f => mine.msg.push(f), saveState(){}, onState(){},
+      toast(){}, vibrate(){}, peerOnline:() => true, onPeerChange(){},
+      finish:(r, t) => { if(!fin) fin = { r, t }; } });
+    return { cH:mk(true, { id:'A', name:'Agus' }, { id:'B', name:'Rebus' }, H, G),
+             cG:mk(false, { id:'B', name:'Rebus' }, { id:'A', name:'Agus' }, G, H),
+             ver:() => fin };
+  }
+
+  /* buscaminas: tres minas y fuera */
+  {
+    const mod = await import('../js/games/buscaminas.js');
+    const { cH, cG, ver } = dupla(77);
+    const iH = await mod.default(cH), iG = await mod.default(cG);
+    const celdas = (c) => c.el.find(n => n.classList?.contains?.('ms-cell'));
+    const mismo = celdas(cH).length === 100 && celdas(cG).length === 100;
+    const cel = celdas(cG);
+    let pisadas = 0;
+    for(let i = 0; i < 100 && !ver() && pisadas < 3; i++){
+      cel[i].fire('click');
+      await new Promise(r => setTimeout(r, 4));
+      if(cel[i].classList.contains('mine')) pisadas++;
+    }
+    await new Promise(r => setTimeout(r, 60));
+    const f = ver();
+    if(!mismo || !f || f.r !== 'me' || !/3 minas/.test(f.t || '')) mal++;
+    iH?.destroy?.(); iG?.destroy?.();
+  }
+
+  /* memorama: mismo reparto y gana quien junta los 10 pares */
+  {
+    const mod = await import('../js/games/memorama.js');
+    const { cH, cG, ver } = dupla(41);
+    const iH = await mod.default(cH), iG = await mod.default(cG);
+    const caras = (c) => c.el.find(n => n.classList?.contains?.('mem-cara')).map(n => n.textContent);
+    const igual = JSON.stringify(caras(cH)) === JSON.stringify(caras(cG));
+    const cartas = cH.el.find(n => n.classList?.contains?.('mem-card'));
+    const porCara = {};
+    caras(cH).forEach((c, i) => (porCara[c] ||= []).push(i));
+    for(const par of Object.values(porCara)){
+      cartas[par[0]].fire('click');
+      cartas[par[1]].fire('click');
+      await new Promise(r => setTimeout(r, 8));
+    }
+    await new Promise(r => setTimeout(r, 80));
+    const f = ver();
+    if(!igual || !f || f.r !== 'me' || !/10 pares/.test(f.t || '')) mal++;
+    iH?.destroy?.(); iG?.destroy?.();
+  }
+
+  console.log(`${mal ? '✗' : '✓'} carreras    mismo tablero para los dos; gana quien termina y 3 minas te eliminan`);
+  return mal ? 1 : 0;
+}
+if(!only) fails += await probarCarreras();
+
+/* --- el canal de juego no debe quedarse pegado a un relay mudo --- */
+async function probarCanal(){
+  const { Net } = await import('../js/net/net.js');
+  const n = new Net();
+  n._alive = true; n.me = { id:'yo' };
+  const mk = (url, i, lastPeer) => ({ url, i, up:true, sawPeer:lastPeer > 0, lastPeer, client:{} });
+  const t = Date.now();
+  n.links = [mk('a', 0, t - 30000), mk('b', 1, t - 200), mk('c', 2, 0)];
+  n._pickActive();
+  const eligeFresco = n.active?.url === 'b';
+  n._watchdog();
+  const abandonaMudo = n.active?.url === 'b';
+  n.links = [mk('a', 0, Date.now() - 100), mk('b', 1, Date.now() - 50), mk('c', 2, 0)];
+  n.active = n.links[0];
+  n._watchdog();
+  const noCambiaPorCapricho = n.active?.url === 'a';
+  const ok = eligeFresco && abandonaMudo && noCambiaPorCapricho;
+  console.log(`${ok ? '✓' : '✗'} canal       se cambia de relay si el activo se queda mudo`);
+  return ok ? 0 : 1;
+}
+if(!only) fails += await probarCanal();
 
 /* --- colores: nunca el mismo para los dos, y los dos teléfonos de acuerdo --- */
 async function probarColores(){

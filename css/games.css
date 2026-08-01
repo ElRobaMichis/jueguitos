@@ -171,6 +171,7 @@
 }
 .ms-cell:active{background:rgba(255,255,255,.25)}
 .ms-cell.open{background:rgba(0,0,0,.32);cursor:default}
+.ms-cell.flag{background:rgba(255,210,63,.25);font-size:min(3.4vw,15px)}
 .ms-cell.mine{font-size:min(3.4vw,15px)}
 .ms-cell.revealed{animation:msOpen .3s ease-out}
 @keyframes msOpen{0%{transform:scale(.55);opacity:.2}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}

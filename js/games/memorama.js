@@ -1,93 +1,93 @@
-/* Memorama — 10 pares */
-import { turnGame, turnText, turnClass, el, clear, beep, vibrate, shuffled,
-         sfxFlip, chord, sfxError } from './lib/kit.js';
+/* Memorama — carrera: los dos tienen EL MISMO tablero (misma semilla) y cada
+   quien juega en el suyo a la vez. Gana quien junte los 10 pares primero.
+
+   Antes era por turnos y se sentía raro: la mitad del tiempo estabas mirando
+   sin hacer nada, y las cartas del otro te llegaban tarde o no las alcanzabas
+   a ver. Así nadie espera y la tensión está en el marcador del rival. */
+import { raceGame, el, clear, beep, vibrate, shuffled,
+         sfxFlip, chord, sfxError, sfxWin } from './lib/kit.js';
 
 const FACES = ['🍓','🌙','🐙','🎈','🍕','🦋','⚡','🌵','🐧','🍀','🎸','🚀','🧁','🐳','🌻','🍩'];
+const PARES = 10;
+const ESPERA = 900;                     // lo que se ve la pareja fallada (tablero propio)
 
 export default (ctx) => {
-  let vistas = '', pares = 0;
+  let verRival = () => {};
 
-  return turnGame(ctx, {
-  init(c, P){
-    const picks = shuffled(FACES, c.rng).slice(0, 10);
-    return {
-      cards: shuffled([...picks, ...picks], c.rng),
-      up: [], matched: {}, lock: false,
-      turn: c.rng() < 0.5 ? P.host : P.guest,
-      score: { [P.host]:0, [P.guest]:0 },
-    };
-  },
+  return raceGame(ctx, {
+  setup(c, P, api){
+    const picks = shuffled(FACES, c.rng).slice(0, PARES);
+    const cartas = shuffled([...picks, ...picks], c.rng);
 
-  /* Sólo se ven las cartas volteadas o ya emparejadas. */
-  view(s){
-    return {
-      faces: s.cards.map((f, i) => (s.up.includes(i) || s.matched[i] != null) ? f : null),
-      n: s.cards.length, up:s.up, matched:s.matched, turn:s.turn, score:s.score, lock:s.lock,
-    };
-  },
+    const hechas = new Set();
+    let arriba = [], bloqueado = false, intentos = 0, suAvance = 0, t0 = performance.now();
 
-  action(s, a, from, api){
-    const P = api.P;
-    if(s.lock || from !== s.turn || a.i == null) return;
-    if(s.matched[a.i] != null || s.up.includes(a.i)) return;
-
-    s.up.push(a.i);
-    if(s.up.length < 2) return;
-
-    const [x, y] = s.up;
-    if(s.cards[x] === s.cards[y]){
-      s.matched[x] = from; s.matched[y] = from;
-      s.score[from]++;
-      s.up = [];
-      const done = Object.keys(s.matched).length >= s.cards.length;
-      if(done){
-        const mine = s.score[P.me], their = s.score[P.them];
-        return api.finish(mine > their ? 'me' : mine < their ? 'them' : 'draw', `${mine} — ${their} pares`);
-      }
-    }else{
-      s.lock = true;
-      setTimeout(() => {                              // se enseñan un momento y se voltean
-        s.up = []; s.lock = false; s.turn = P.other(from);
-        api.sync();
-      }, 5);
-    }
-  },
-
-  render(v, ui, c, api){
-    const P = api.P;
-    ui.status(turnText(P, v.turn, `${v.score[P.me]} — ${v.score[P.them]}`), turnClass(P, v.turn));
-
-    /* sonidos según lo que cambió (los oyen los dos) */
-    const huella = v.up.join(',');
-    const nPares = Object.keys(v.matched).length / 2;
-    if(huella !== vistas){
-      if(v.up.length) sfxFlip(), vibrate(12);
-      vistas = huella;
-    }
-    if(nPares > pares){ chord([660, 880, 1100], .18); vibrate([25, 40, 25]); }
-    else if(nPares === pares && v.lock) sfxError();
-    pares = nPares;
-
+    const st = el('div', { class:'g-status me' });
     const grid = el('div', { class:'bd bd-mem' });
-    for(let i = 0; i < v.n; i++){
-      const face = v.faces[i];
-      const owner = v.matched[i];
-      const shown = face != null;
-      const cara = el('span', { class:'mem-cara', text: shown ? face : '' });
-      const dorso = el('span', { class:'mem-dorso', text:'❔' });
-      grid.append(el('button', {
-        class:'mem-card' + (shown ? ' up' : '') + (owner != null ? ' done' : ''),
-        style: owner != null ? { borderColor:P.color(owner), background:P.color(owner) + '22' } : {},
-        onclick: () => {
-          if(v.lock || !P.isMe(v.turn) || shown) return;
-          api.act({ i });
-        },
-      }, el('span', { class:'mem-inner' }, dorso, cara)));
+    const pie = el('div', { class:'g-pill' });
+    c.el.append(el('div', { class:'g-wrap' }, st, el('div', { class:'g-center' }, grid),
+                            el('div', { class:'g-row' }, pie)));
+
+    const celdas = cartas.map((cara, i) => {
+      const nodo = el('button', { class:'mem-card' },
+        el('span', { class:'mem-inner' },
+          el('span', { class:'mem-dorso', text:'❔' }),
+          el('span', { class:'mem-cara', text:cara })));
+      nodo.addEventListener('click', () => tocar(i));
+      grid.append(nodo);
+      return nodo;
+    });
+
+    const pintar = () => {
+      celdas.forEach((n, i) => {
+        n.classList.toggle('up', arriba.includes(i) || hechas.has(i));
+        n.classList.toggle('done', hechas.has(i));
+      });
+      const seg = Math.round((performance.now() - t0) / 1000);
+      st.textContent = api.terminado ? 'Se acabó' :
+        `${hechas.size / 2} de ${PARES} pares · ⏱ ${seg}s`;
+      pie.textContent = `Tú ${hechas.size / 2} — ${suAvance} ${c.peer.name}`;
+    };
+
+    function tocar(i){
+      if(bloqueado || api.terminado) return;
+      if(hechas.has(i) || arriba.includes(i)) return;
+
+      arriba.push(i);
+      sfxFlip(); vibrate(10);
+      pintar();
+      if(arriba.length < 2) return;
+
+      const [a, b] = arriba;
+      intentos++;
+      if(cartas[a] === cartas[b]){
+        hechas.add(a); hechas.add(b);
+        arriba = [];
+        chord([660, 880, 1100], .16); vibrate([20, 35, 20]);
+        pintar();
+        api.progress(hechas.size / 2);
+        if(hechas.size === cartas.length){
+          const seg = ((performance.now() - t0) / 1000).toFixed(1);
+          sfxWin();
+          api.progress(PARES, { force:true });
+          api.gano(`¡Los 10 pares en ${seg}s y ${intentos} intentos!`);
+        }
+        return;
+      }
+
+      bloqueado = true;
+      sfxError();
+      setTimeout(() => {
+        arriba = []; bloqueado = false; pintar();
+      }, ESPERA);
     }
 
-    clear(ui.center).append(grid);
-    clear(ui.actions).append(el('div', { class:'g-pill', html:
-      `<span style="color:${P.color(P.me)}">●</span> ${v.score[P.me]} · <span style="color:${P.color(P.them)}">●</span> ${v.score[P.them]}` }));
+    verRival = (n) => { suAvance = n; pintar(); };
+    pintar();
+    const reloj = setInterval(pintar, 1000);
+    return { destroy(){ clearInterval(reloj); } };
   },
+
+  onRival(n){ verRival(n); },
   });
 };

@@ -134,15 +134,21 @@ export class Net extends Emitter {
     this._hb = setInterval(() => {
       if(this.status !== 'online') return;
       this._checkStale();
-      // sólo hablamos si llevamos rato callados
+      /* El latido va por TODOS los relays: así cada uno demuestra cada tanto
+         que sigue sirviendo para hablar con la otra persona, y el vigilante
+         puede notar cuál se quedó mudo. */
       if(Date.now() - (this._lastOut || 0) > HEARTBEAT_MS - 1000)
-        this.publish({ t:'hb', d:{} }, { qos: 0 });
+        this.publish({ t:'hb', d:{} }, { qos: 0, todos: true });
     }, HEARTBEAT_MS);
+
+    /* Vigilante rápido del canal de juego. */
+    clearInterval(this._wd);
+    this._wd = setInterval(() => { if(this._alive) this._watchdog(); }, 3000);
   }
 
   /** Abre (y mantiene abierto) un broker. mqtt.js reintenta solo si se cae. */
   _openLink(url, i){
-    const link = { url, i, client: null, up: false, sawPeer: false };
+    const link = { url, i, client: null, up: false, sawPeer: false, lastPeer: 0 };
     if(!this._alive) return link;
 
     const client = mqtt.connect(url, {
@@ -175,20 +181,47 @@ export class Net extends Emitter {
       this.emit('reconnected');
     });
 
-    client.on('close',   () => { link.up = false; link.sawPeer = false; this._pickActive(); this._refreshStatus(); });
+    client.on('close',   () => { link.up = false; link.sawPeer = false; link.lastPeer = 0;
+                                 this._pickActive(); this._refreshStatus(); });
     client.on('error',   (e) => console.warn('[net]', url, e?.message || e));
     client.on('message', (topic, payload) => this._onRaw(topic, payload, link));
     return link;
   }
 
-  /** Canal de juego: el primer relay donde estemos los dos (los dos eligen igual). */
+  /** Canal de juego: el primer relay donde nos hayamos oído hace poco.
+      "Hace poco" importa: si sólo miráramos "aquí la vi alguna vez", el canal
+      se quedaba pegado a un relay que la otra persona ya abandonó. La
+      presencia sigue llegando por los demás (así que los dos se ven en verde)
+      pero las jugadas caen al vacío: el juego se congela sin avisar. */
   _pickActive(){
-    const links = this.links || [];
+    const links = (this.links || []).filter(l => l.up);
     const antes = this.active?.url;
-    this.active = links.find(l => l.up && l.sawPeer) || links.find(l => l.up) || null;
+    /* No hace falta que los dos usemos el mismo relay: cada quien escucha en
+       los tres, así que basta con hablar por uno donde la otra persona esté.
+       Elegimos aquel por el que nos hayamos oído más recientemente. */
+    const oidos = links.filter(l => l.sawPeer)
+                       .sort((a, b) => (b.lastPeer || 0) - (a.lastPeer || 0) || a.i - b.i);
+    this.active = oidos[0] || links[0] || null;
     if(this.active && this.active.url !== antes){
       this.client = this.active.client;      // compatibilidad con el resto del código
       if(antes) console.info('[net] canal →', this.active.url);
+    }
+  }
+
+  /** Si el canal activo se queda mudo pero por otro sí nos oímos, cambiamos. */
+  _watchdog(){
+    const a = this.active;
+    if(!a || !a.up){ this._pickActive(); return; }
+    const ahora = Date.now();
+    if(ahora - (a.lastPeer || 0) < 4000) return;                 // va bien
+    const mejor = (this.links || [])
+      .filter(l => l.up && l !== a)
+      .sort((x, y) => (y.lastPeer || 0) - (x.lastPeer || 0))[0];
+    if(mejor && (mejor.lastPeer || 0) > (a.lastPeer || 0) + 1500){
+      this.active = mejor;
+      this.client = mejor.client;
+      console.info('[net] el canal se quedó mudo →', mejor.url);
+      this._flushOutbox();
     }
   }
 
@@ -204,6 +237,7 @@ export class Net extends Emitter {
   leave(){
     this._alive = false;
     clearInterval(this._hb);
+    clearInterval(this._wd);
     for(const l of this.links || []){
       try{
         // Limpia los retained propios para que la sala quede vacía de verdad.
@@ -222,10 +256,10 @@ export class Net extends Emitter {
   /* --------------------------------------------------------------- envío -- */
 
   /** Publica un sobre en el topic de mensajes. */
-  publish(env, { qos = 0 } = {}){
+  publish(env, { qos = 0, todos = false } = {}){
     env.f = this.me.id;
     env.n = ++this.seq;
-    this._sealAndSend(this.tMsg, env, { qos, retain: false });
+    this._sealAndSend(this.tMsg, env, { qos, retain: false }, todos);
   }
 
   /** Mensaje fiable: se reintenta si la otra persona estaba desconectada. */
@@ -311,6 +345,13 @@ export class Net extends Emitter {
       try{ env = await this._open(payload); }
       catch{ return; }                            // no es de nuestra sala (código distinto)
       if(!env) return;
+
+      /* Antes de descartar copias: apuntar que por ESTE relay sí nos llegó algo
+         suyo. Si sólo lo marcáramos con la copia que sobrevive al filtro, los
+         otros relays parecerían muertos aunque estuvieran perfectos. */
+      const suyo = (env.f && env.f !== this.me.id) ||
+                   (topic.startsWith(this.base + '/p/') && env.d?.id !== this.me.id);
+      if(link && suyo){ link.lastPeer = Date.now(); link.sawPeer = true; }
 
       /* Lo retenido llega por los tres relays: procesamos sólo la primera copia. */
       if(env.f && env.f !== this.me.id && env.n != null){

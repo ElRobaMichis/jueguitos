@@ -11,9 +11,9 @@ export const GAMES = [
   { id:'escaleras',  name:'Serpientes',      emoji:'🐍', tint:'#ff7a45', tag:'azar',   load:() => import('./escaleras.js') },
   { id:'ludo',       name:'Ludo',            emoji:'🎲', tint:'#8b5cf6', tag:'azar',   load:() => import('./ludo.js') },
   { id:'batalla',    name:'Batalla Naval',   emoji:'🚢', tint:'#22d3ee', tag:'turnos', load:() => import('./batalla.js') },
-  { id:'memorama',   name:'Memorama',        emoji:'🃏', tint:'#ff4f9a', tag:'turnos', load:() => import('./memorama.js') },
+  { id:'memorama',   name:'Memorama',        emoji:'🃏', tint:'#ff4f9a', tag:'carrera', load:() => import('./memorama.js') },
   { id:'loteria',    name:'Lotería',         emoji:'🎴', tint:'#f2c14e', tag:'azar',   load:() => import('./loteria.js') },
-  { id:'buscaminas', name:'Buscaminas',      emoji:'💣', tint:'#f43f5e', tag:'turnos', load:() => import('./buscaminas.js') },
+  { id:'buscaminas', name:'Buscaminas',      emoji:'💣', tint:'#f43f5e', tag:'carrera', load:() => import('./buscaminas.js') },
 
   /* --- palabras y dibujo ---------------------------------------------- */
   { id:'ahorcado',   name:'Ahorcado',        emoji:'🔤', tint:'#ffd23f', tag:'palabras', load:() => import('./ahorcado.js') },

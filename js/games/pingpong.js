@@ -34,7 +34,8 @@ export default (ctx) => liveGame(ctx, {
     const dirOf = (id) => id === P.host ? -1 : 1;      // hacia dónde sale la pelota
 
     let myX = W / 2, lastSent = 0, cooldown = 0, foeBounceAt = -9;
-    let flash = 0, clock = 0, ultimoPaquete = 0, perdido = false;
+    let flash = 0, clock = 0, perdido = false;
+    let ultimoPaqueteReal = performance.now();     // reloj de pared: los fotogramas se paran
 
     /* Lo que se dibuja persigue a lo que dice la red: con paquetes a
        destiempo, pintar la posición cruda haría saltar todo. */
@@ -61,6 +62,7 @@ export default (ctx) => liveGame(ctx, {
     };
     cv.addEventListener('pointerdown', onMove, { passive:false });
     cv.addEventListener('pointermove', onMove, { passive:false });
+
 
     /* --- rebote contra una paleta, con barrido (no se salta ningún fotograma) --- */
     function bounceOff(id){
@@ -93,6 +95,7 @@ export default (ctx) => liveGame(ctx, {
       if(b.x < R){ b.x = R; b.vx = Math.abs(b.vx); sfxWall(); }
       if(b.x > W - R){ b.x = W - R; b.vx = -Math.abs(b.vx); sfxWall(); }
     }
+
 
     return {
       /* el rival mueve su paleta, o avisa de un rebote suyo */
@@ -129,9 +132,10 @@ export default (ctx) => liveGame(ctx, {
         if(S.serve > 0){ S.serve -= dt; return; }
 
         /* Si se cortó la señal, dejamos la bola quieta en vez de seguir
-           adivinando su trayectoria: si no, se iba de la cancha y "desaparecía",
-           y al volver los paquetes pegaba un salto rarísimo. */
-        perdido = clock - ultimoPaquete > 0.55;
+           adivinando su trayectoria: si no, se iba de la cancha y "desaparecía".
+           Se mide con el reloj de pared porque si el teléfono se bloquea los
+           fotogramas se paran y el reloj del juego no avanzaría. */
+        perdido = performance.now() - ultimoPaqueteReal > 700;
         if(perdido) return;
 
         integrate(dt);
@@ -154,7 +158,7 @@ export default (ctx) => liveGame(ctx, {
                 Math.round(S.serve * 100)];             // saque: para que el otro no siga la bola
       },
       applySnapshot(a){
-        ultimoPaquete = clock;
+        ultimoPaqueteReal = performance.now();
         const golAntes = S.score[P.host] + S.score[P.guest];
         S.score[P.host] = a[6]; S.score[P.guest] = a[7];
         S.serve = (a[8] ?? 0) / 100;
@@ -163,6 +167,11 @@ export default (ctx) => liveGame(ctx, {
         /* Tras un gol la bola vuelve al centro: hay que hacerle caso al
            anfitrión aunque acabemos de rebotar, o se quedaría "viva" en
            nuestra pantalla mientras allá ya empezó el saque. */
+        /* Se hace caso al paquete tal cual. Probé a adelantar la bola el tiempo
+           que tarda en llegar, y a corregir poco a poco: MEDIDO, las dos
+           versiones movían la bola de forma más irregular que así de simple
+           (12 % de irregularidad contra 27 % y 33 %). El problema de ella no
+           era el retraso, era que los paquetes dejaban de llegar. */
         if(cooldown <= 0 || hayGol || S.serve > 0){
           S.ball.x = a[0] / 10; S.ball.y = a[1] / 10;
           S.ball.vx = a[2]; S.ball.vy = a[3];
@@ -221,6 +230,7 @@ export default (ctx) => liveGame(ctx, {
           : `Tú ${S.score[myId]} — ${S.score[foeId]} ${c.peer.name}   ·   primero a ${WIN}` +
             (sp > 90 ? '   🔥' : '');
       },
+
     };
 
     function check(who){

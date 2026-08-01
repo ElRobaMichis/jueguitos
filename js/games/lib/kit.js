@@ -237,6 +237,58 @@ export function liveGame(ctx, def, hz = 12){
 }
 
 /* ===========================================================================
+   raceGame — carrera: el mismo tablero para los dos, cada quien en el suyo,
+   y gana quien termine primero (o pierde quien se estrelle antes).
+
+   Por la red sólo viaja el avance del rival de vez en cuando y un aviso al
+   acabar: unos pocos cientos de bytes por partida. Nadie espera turnos, que
+   es lo aburrido de estos juegos a distancia.
+
+   def = { setup(ctx, P, api), onRival(avance) }
+   api = { progress(n), gano(texto), perdi(texto) }
+   =========================================================================== */
+export function raceGame(ctx, def){
+  const P = players(ctx);
+  let terminado = false, ultimo = 0;
+
+  const resolver = (gane, texto) => {
+    if(terminado) return;
+    terminado = true;
+    if(ctx.isHost) ctx.finish(gane ? 'me' : 'them', texto);
+    else ctx.sendReliable({ fin: gane ? 'win' : 'lose', texto });
+  };
+
+  const api = {
+    P,
+    /** Cuánto llevo, para que el otro vea la carrera. */
+    progress(n, { force = false } = {}){
+      const ahora = performance.now();
+      if(!force && ahora - ultimo < 500) return;
+      ultimo = ahora;
+      ctx.send({ pr: n });
+    },
+    gano(texto){ resolver(true, texto); },
+    perdi(texto){ resolver(false, texto); },
+    get terminado(){ return terminado; },
+  };
+
+  ctx.onMsg((m) => {
+    if(m?.pr != null) def.onRival?.(m.pr);
+    if(m?.fin && ctx.isHost && !terminado){
+      terminado = true;
+      // si el invitado ganó, ganó él; si se estrelló, gano yo
+      ctx.finish(m.fin === 'win' ? 'them' : 'me', m.texto);
+    }
+  });
+
+  const inst = def.setup(ctx, P, api);
+  return {
+    resync(){ },
+    destroy(){ inst?.destroy?.(); },
+  };
+}
+
+/* ===========================================================================
    duelGame — los dos juegan lo mismo por separado y sólo se sincroniza el
    marcador (basket, arquería, ritmo, globos, tap). Consume poquísimos datos y
    aguanta perfecto una conexión mala.
