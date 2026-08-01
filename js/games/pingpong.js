@@ -34,7 +34,7 @@ export default (ctx) => liveGame(ctx, {
     const dirOf = (id) => id === P.host ? -1 : 1;      // hacia dónde sale la pelota
 
     let myX = W / 2, lastSent = 0, cooldown = 0, foeBounceAt = -9;
-    let flash = 0, clock = 0;
+    let flash = 0, clock = 0, ultimoPaquete = 0, perdido = false;
 
     /* Lo que se dibuja persigue a lo que dice la red: con paquetes a
        destiempo, pintar la posición cruda haría saltar todo. */
@@ -127,7 +127,18 @@ export default (ctx) => liveGame(ctx, {
         clock += dt; ease(dt);
         if(flash > 0) flash -= dt;
         if(S.serve > 0){ S.serve -= dt; return; }
+
+        /* Si se cortó la señal, dejamos la bola quieta en vez de seguir
+           adivinando su trayectoria: si no, se iba de la cancha y "desaparecía",
+           y al volver los paquetes pegaba un salto rarísimo. */
+        perdido = clock - ultimoPaquete > 0.55;
+        if(perdido) return;
+
         integrate(dt);
+        // por si acaso, que nunca se salga de la cancha
+        S.ball.x = clamp(S.ball.x, R, W - R);
+        S.ball.y = clamp(S.ball.y, -8, H + 8);
+
         if(cooldown > 0) cooldown -= dt;
         else if(bounceOff(myId)){                        // mando yo en mi paleta
           cooldown = 0.25;
@@ -139,19 +150,28 @@ export default (ctx) => liveGame(ctx, {
         return [Math.round(S.ball.x * 10), Math.round(S.ball.y * 10),
                 Math.round(S.ball.vx), Math.round(S.ball.vy),
                 Math.round(S.pad[P.host]), Math.round(S.pad[P.guest]),
-                S.score[P.host], S.score[P.guest]];
+                S.score[P.host], S.score[P.guest],
+                Math.round(S.serve * 100)];             // saque: para que el otro no siga la bola
       },
       applySnapshot(a){
-        // Si acabo de rebotar, mi versión es más nueva que la que viene.
-        if(cooldown <= 0){
+        ultimoPaquete = clock;
+        const golAntes = S.score[P.host] + S.score[P.guest];
+        S.score[P.host] = a[6]; S.score[P.guest] = a[7];
+        S.serve = (a[8] ?? 0) / 100;
+        const hayGol = (a[6] + a[7]) !== golAntes;
+
+        /* Tras un gol la bola vuelve al centro: hay que hacerle caso al
+           anfitrión aunque acabemos de rebotar, o se quedaría "viva" en
+           nuestra pantalla mientras allá ya empezó el saque. */
+        if(cooldown <= 0 || hayGol || S.serve > 0){
           S.ball.x = a[0] / 10; S.ball.y = a[1] / 10;
           S.ball.vx = a[2]; S.ball.vy = a[3];
           S.ball.py = S.ball.y;
+          if(hayGol || S.serve > 0){ cooldown = 0; view.bx = S.ball.x; view.by = S.ball.y; }
         }
         S.pad[P.host] = a[4]; S.pad[P.guest] = a[5];
         S.pad[myId] = myX;                               // la mía la mando yo
-        if(S.score[P.host] !== a[6] || S.score[P.guest] !== a[7]){ sfxGoal(); vibrate(70); }
-        S.score[P.host] = a[6]; S.score[P.guest] = a[7];
+        if(hayGol){ sfxGoal(); vibrate(70); }
       },
 
       draw(){
@@ -196,8 +216,10 @@ export default (ctx) => liveGame(ctx, {
         g.beginPath(); g.arc(view.bx * scale, vy(view.by) * scale, R * scale, 0, 7); g.fill();
         g.restore();
 
-        st.textContent = `Tú ${S.score[myId]} — ${S.score[foeId]} ${c.peer.name}   ·   primero a ${WIN}` +
-                         (sp > 90 ? '   🔥' : '');
+        st.textContent = perdido
+          ? `Esperando señal… · Tú ${S.score[myId]} — ${S.score[foeId]} ${c.peer.name}`
+          : `Tú ${S.score[myId]} — ${S.score[foeId]} ${c.peer.name}   ·   primero a ${WIN}` +
+            (sp > 90 ? '   🔥' : '');
       },
     };
 

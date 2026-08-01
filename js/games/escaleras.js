@@ -78,7 +78,10 @@ export default (ctx) => {
       s.k++;
       s.move = { k:s.k, id:from, from:desde, walk:cae, to:p, d };
 
-      if(p >= 100) return api.finish(P.isMe(from) ? 'me' : 'them', '¡Llegó a la meta!');
+      /* Ojo: NO se gana aquí. Antes salía el cartel de "ganaste" antes de que
+         la ficha se moviera, y no se veía llegar a la meta. Se marca quién
+         ganó y el aviso lo da la animación al terminar. */
+      if(p >= 100){ s.win = from; return; }
       if(d !== 6) s.turn = P.other(from);
       else s.note = (nota ? nota + ' · ' : '') + '¡Sacaste 6, tiras otra vez!';
     },
@@ -159,6 +162,8 @@ export default (ctx) => {
           function terminar(){
             playing = false;
             api.redraw();
+            // ahora sí: la ficha ya llegó, se puede cantar victoria
+            if(s.win) api.finish(P.isMe(s.win) ? 'me' : 'them', '¡Llegó a la meta!');
           }
         }, 750);
       }

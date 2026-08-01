@@ -48,12 +48,23 @@ export function toast(text, ms = 2600){
   return t;
 }
 
-/* --------------------------------------------------------- color de peer -- */
+/* --------------------------------------------------------- color de peer --
+   El color sale del identificador del teléfono, y con seis colores a veces
+   les tocaba el mismo a los dos (imposible saber de quién es cada ficha).
+   Si chocan, se corre el del identificador MAYOR. La regla no depende de
+   quién la calcula, así que los dos teléfonos pintan a cada quien igual. */
 const PALETTE = ['#ff4f9a', '#22d3ee', '#ffd23f', '#a3e635', '#ff7a45', '#8b5cf6'];
-export function colorFor(id = ''){
+const hashColor = (id = '') => {
   let h = 0;
   for(let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return PALETTE[h % PALETTE.length];
+  return h % PALETTE.length;
+};
+export function colorFor(id = '', otherId = null){
+  let i = hashColor(id);
+  if(otherId && otherId !== id && hashColor(otherId) === i && id > otherId){
+    i = (i + 3) % PALETTE.length;                 // el "mayor" cede y se corre
+  }
+  return PALETTE[i];
 }
 export const initial = (name = '?') => (name.trim()[0] || '?').toUpperCase();
 
@@ -93,12 +104,45 @@ export function countdown(from = 3, label = ''){
   });
 }
 
-/* ------------------------------------------------------------ sonido/vibra -- */
+/* ------------------------------------------------------------ sonido/vibra --
+   El navegador no deja sonar nada hasta que la persona toca la pantalla, y en
+   iPhone el permiso sólo se concede DURANTE ese toque. Si el primer sonido
+   salía de un temporizador (una carta cantada, el dado), el audio se quedaba
+   dormido y ya no se oía nada en toda la partida. Por eso lo despertamos con
+   el primer toque, pase lo que pase, y otra vez al volver del segundo plano. */
 let actx = null;
+
+function audio(){
+  if(!actx){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return null;
+    actx = new AC();
+  }
+  if(actx.state === 'suspended') actx.resume();
+  return actx;
+}
+
+export function unlockAudio(){
+  const a = audio();
+  if(!a) return;
+  try{                                   // un sonido mudo: basta para desbloquear
+    const s = a.createBufferSource();
+    s.buffer = a.createBuffer(1, 1, a.sampleRate);
+    s.connect(a.destination);
+    s.start(0);
+  }catch{}
+}
+
+if(typeof document !== 'undefined'){
+  const despertar = () => unlockAudio();
+  document.addEventListener('pointerdown', despertar, { capture:true });
+  document.addEventListener('keydown', despertar, { capture:true });
+  document.addEventListener('visibilitychange', () => { if(!document.hidden) audio(); });
+}
+
 export function beep(freq = 660, dur = 0.08, type = 'sine', gain = 0.05){
   try{
-    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-    if(actx.state === 'suspended') actx.resume();
+    if(!audio()) return;
     const o = actx.createOscillator(), g = actx.createGain();
     o.type = type; o.frequency.value = freq;
     g.gain.setValueAtTime(gain, actx.currentTime);
@@ -112,8 +156,7 @@ export function chord(freqs, dur = 0.3){ freqs.forEach((f, i) => setTimeout(() =
 /** Ruido corto: sirve para golpes, dados y cosas que "raspan". */
 function noise(dur = 0.08, gain = 0.05, filterHz = 1800){
   try{
-    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-    if(actx.state === 'suspended') actx.resume();
+    if(!audio()) return;
     const n = Math.floor(actx.sampleRate * dur);
     const buf = actx.createBuffer(1, n, actx.sampleRate);
     const data = buf.getChannelData(0);
@@ -129,8 +172,7 @@ function noise(dur = 0.08, gain = 0.05, filterHz = 1800){
 /** Tono que se desliza de una frecuencia a otra. */
 function slide(from, to, dur = 0.25, gain = 0.05, type = 'sine'){
   try{
-    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-    if(actx.state === 'suspended') actx.resume();
+    if(!audio()) return;
     const o = actx.createOscillator(), g = actx.createGain();
     o.type = type;
     o.frequency.setValueAtTime(from, actx.currentTime);

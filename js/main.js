@@ -14,7 +14,7 @@ import {
 const EMOJIS = ['❤️', '😂', '😮', '😘', '😭', '🔥', '👏', '😜'];
 /* Se muestra abajo en la pantalla de inicio: si algo falla, sirve para saber
    qué versión tiene cada teléfono. Cámbialo junto con VERSION en sw.js. */
-const VERSION = 'v12';
+const VERSION = 'v13';
 
 const app = {
   code: null,
@@ -197,11 +197,12 @@ function paintConn(s){
 function renderPeers(){
   const wrap = clear($('#peers'));
   const list = [app.me, ...net.peerList()];
+  const otro = (id) => (id === app.me.id ? net.partner()?.id : app.me.id) || null;
   for(const p of list){
     const isMe = p.id === app.me.id;
     wrap.append(el('div', {
       class: 'peer-chip' + (!isMe && !p.online ? ' off' : ''),
-      style: { background: colorFor(p.id) },
+      style: { background: colorFor(p.id, otro(p.id)) },
       title: p.name,
       text: initial(p.name),
     }));
@@ -218,8 +219,8 @@ function renderGrid(){
     const mine  = app.myPick === g.id;
     const their = peer?.pick === g.id;
     const marks = el('div', { class:'pick-marks' });
-    if(mine)  marks.append(el('div', { class:'pick-mark', style:{ background:colorFor(app.me.id) }, text:initial(app.me.name) }));
-    if(their) marks.append(el('div', { class:'pick-mark', style:{ background:colorFor(peer.id) },   text:initial(peer.name) }));
+    if(mine)  marks.append(el('div', { class:'pick-mark', style:{ background:colorFor(app.me.id, peer?.id) }, text:initial(app.me.name) }));
+    if(their) marks.append(el('div', { class:'pick-mark', style:{ background:colorFor(peer.id, app.me.id) },   text:initial(peer.name) }));
 
     grid.append(el('button', {
       class: 'game-tile' + (mine && their ? ' picked-both' : mine ? ' picked-me' : their ? ' picked-them' : ''),
@@ -346,9 +347,9 @@ function renderScore(){
 
   const body = clear($('#score-body'));
   body.append(el('div', { class:'score-total' },
-    el('div', {}, el('div', { class:'n', style:{ color:colorFor(app.me.id) }, text:String(mine) }), app.me.name),
+    el('div', {}, el('div', { class:'n', style:{ color:colorFor(app.me.id, peer?.id) }, text:String(mine) }), app.me.name),
     el('div', { text:'—' }),
-    el('div', {}, el('div', { class:'n', style:{ color:colorFor(peer?.id || '') }, text:String(their) }), peer?.name || '…'),
+    el('div', {}, el('div', { class:'n', style:{ color:colorFor(peer?.id || '', app.me.id) }, text:String(their) }), peer?.name || '…'),
   ));
 
   const rows = GAMES

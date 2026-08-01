@@ -18,6 +18,22 @@ export default (ctx) => liveGame(ctx, {
       hold: 0.8,
     };
     let mine = { x:W / 2, y:H - 20 }, lastSent = 0;
+    /* Velocidad de cada mazo. Sin esto el disco salía siempre igual de rápido
+       por más fuerte que golpearas: el rebote se calculaba con la velocidad
+       del DISCO, no con la del mazo. Se suaviza porque la posición del rival
+       llega a golpes (unas 15 veces por segundo). */
+    const prevM = { [P.host]:{ x:W / 2, y:H - 20 }, [P.guest]:{ x:W / 2, y:20 } };
+    const velM  = { [P.host]:{ x:0, y:0 }, [P.guest]:{ x:0, y:0 } };
+    const medirMazos = (dt) => {
+      for(const id of [P.host, P.guest]){
+        const m = S.m[id], q = prevM[id];
+        const vx = (m.x - q.x) / Math.max(dt, 0.004);
+        const vy = (m.y - q.y) / Math.max(dt, 0.004);
+        velM[id].x += (vx - velM[id].x) * 0.45;
+        velM[id].y += (vy - velM[id].y) * 0.45;
+        prevM[id] = { x:m.x, y:m.y };
+      }
+    };
     /* Lo dibujado persigue a lo que dice la red: con paquetes irregulares,
        pintar la posición cruda haría saltar el disco y el mazo. */
     const view = { p:{ x:W / 2, y:H / 2 }, m:{ [P.host]:{ x:W / 2, y:H - 20 }, [P.guest]:{ x:W / 2, y:20 } } };
@@ -59,6 +75,7 @@ export default (ctx) => liveGame(ctx, {
 
       step(dt){
         ease(dt);
+        medirMazos(dt);
         if(S.hold > 0){ S.hold -= dt; return; }
         const p = S.puck;
         p.x += p.vx * dt; p.y += p.vy * dt;
@@ -85,9 +102,14 @@ export default (ctx) => liveGame(ctx, {
             const nx = dx / d, ny = dy / d;
             p.x = m.x + nx * (MR + PR + 0.2);
             p.y = m.y + ny * (MR + PR + 0.2);
-            const speed = Math.max(38, Math.hypot(p.vx, p.vy) * 1.03);
+            /* lo que el mazo empuja HACIA el disco es lo que le da fuerza:
+               golpear rápido ahora sí manda el disco disparado */
+            const empuje = Math.max(0, velM[id].x * nx + velM[id].y * ny);
+            const speed = Math.min(215, Math.max(42, Math.hypot(p.vx, p.vy) * 0.55 + empuje * 0.85 + 24));
             p.vx = nx * speed; p.vy = ny * speed;
-            beep(620, .03);
+            // que se note el golpazo
+            beep(520 + Math.min(400, empuje * 2.2), .04, 'square', .045);
+            if(empuje > 90) vibrate(25);
           }
         }
       },

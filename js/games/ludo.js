@@ -92,8 +92,9 @@ export default (ctx) => {
       s.k++;
       s.move = { k:s.k, kind:'walk', id:from, t:a.t, from:cur, to:next, d, other, comidas };
 
-      if(s.tok[from].every(p => p === LAST))
-        return api.finish(P.isMe(from) ? 'me' : 'them', '¡Metió las 4 fichas!');
+      /* Como en Serpientes: se marca el ganador y se canta cuando la ficha
+         termina de caminar, no antes. */
+      if(s.tok[from].every(p => p === LAST)) s.win = from;
 
       const again = d === 6 || next === LAST;
       s.dice = null;
@@ -214,6 +215,7 @@ export default (ctx) => {
           place();
           playing = false;
           api.redraw();
+          if(s.win) api.finish(api.P.isMe(s.win) ? 'me' : 'them', '¡Metió las 4 fichas!');
         }, pasos.length * 125 + 140);
       }
     },

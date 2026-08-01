@@ -177,7 +177,7 @@ export function players(ctx){
   return {
     me, them, host, guest,
     name(id){ return id === me ? ctx.me.name : ctx.peer.name; },
-    color(id){ return colorFor(id); },
+    color(id){ return colorFor(id, id === me ? them : me); },   // nunca el mismo para los dos
     other(id){ return id === me ? them : me; },
     isMe(id){ return id === me; },
   };

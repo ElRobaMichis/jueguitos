@@ -263,6 +263,56 @@ async function probarLoteria(){
 }
 if(!only) fails += await probarLoteria();
 
+/* --- colores: nunca el mismo para los dos, y los dos teléfonos de acuerdo --- */
+async function probarColores(){
+  const { colorFor } = await import('../js/core/ui.js');
+  let repetidos = 0, discrepan = 0;
+  for(let i = 0; i < 600; i++){
+    const a = 'dev' + i.toString(36), b = 'tel' + (i * 13).toString(36);
+    if(colorFor(a, b) === colorFor(b, a)) repetidos++;
+    // los dos teléfonos calculan lo mismo para cada quien
+    if(colorFor(a, b) !== colorFor(a, b) || colorFor(b, a) !== colorFor(b, a)) discrepan++;
+  }
+  const ok = repetidos === 0 && discrepan === 0;
+  console.log(`${ok ? '✓' : '✗'} colores     los dos jugadores nunca comparten color` +
+              (ok ? '' : ` (${repetidos} repetidos)`));
+  return ok ? 0 : 1;
+}
+if(!only) fails += await probarColores();
+
+/* --- air hockey: golpear rápido tiene que mandar el disco más fuerte --- */
+async function probarAirHockey(){
+  const mod = await import('../js/games/airhockey.js');
+  async function golpe(msPorPaso){
+    const host = new FakeNode('div');
+    let snap = null;
+    const ctx = { el:host, me:{ id:'A', name:'Agus' }, peer:{ id:'B', name:'Rebus' }, isHost:true, seed:5,
+      rng:Math.random, random:Math.random,
+      send(d){ if(d?.s) snap = d.s; }, sendReliable(){}, onMsg(){}, saveState(){}, onState(){},
+      toast(){}, vibrate(){}, peerOnline:() => true, onPeerChange(){}, finish(){} };
+    const inst = await mod.default(ctx);
+    const cv = host.find(n => n.tagName === 'CANVAS')[0];
+    const mover = (x, y) => cv.fire('pointermove', { clientX:x, clientY:y, preventDefault(){}, touches:[], changedTouches:[] });
+    mover(170, 460);                       // mi mazo, abajo del todo
+    await new Promise(r => setTimeout(r, 950));   // el disco sale parado 0.8 s
+    /* El mismo recorrido en los dos casos; lo único que cambia es lo rápido
+       que se hace. Así se compara la fuerza del golpe, no la distancia. */
+    for(let i = 0; i < 14; i++){
+      mover(170, 460 - i * 22);
+      await new Promise(r => setTimeout(r, msPorPaso));
+    }
+    await new Promise(r => setTimeout(r, 220));
+    inst?.destroy?.();
+    return snap ? Math.hypot(snap[2], snap[3]) : 0;    // rapidez del disco
+  }
+  const suave  = await golpe(85);   // mazo lento
+  const fuerte = await golpe(16);   // mazo rápido
+  const ok = suave > 0 && fuerte > suave * 1.3;
+  console.log(`${ok ? '✓' : '✗'} airhockey   golpear rápido manda el disco más fuerte (lento ${Math.round(suave)} · rápido ${Math.round(fuerte)})`);
+  return ok ? 0 : 1;
+}
+if(!only) fails += await probarAirHockey();
+
 /* --- ritmo: teclado ---
    En la computadora sólo se podía pulsar cuatro botones con el ratón: uno a
    la vez y sin precisión, o sea injugable. */
