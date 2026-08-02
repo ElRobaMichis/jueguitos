@@ -23,8 +23,23 @@ export default (ctx) => {
 
       /* carriles de la carrera (arriba) */
       const carril = { x0: 26, x1: w - 26, yMio: 66, ySuyo: 30 };
-      /* blanco que se pasea y pistola */
-      const blanco = { x: w * 0.3, y: h * 0.46, r: 24, dir: 1 };
+      /* Blanco ERRÁTICO: nada de ir y venir en línea recta (era tan
+         predecible que bastaba dejar el dedo puesto encima). Va eligiendo
+         destinos al azar en toda su zona, a veces se lanza en un arrancón,
+         a veces se frena en seco, y se achica conforme vas ganando. */
+      const zona = { x0: 34, x1: w - 34, y0: h * 0.30, y1: h * 0.58 };
+      const blanco = { x: w * 0.3, y: h * 0.46, r: 26, tx: w * 0.6, ty: h * 0.4, v: 90, pausa: 0, reloj: 0 };
+      const nuevoDestino = () => {
+        blanco.tx = zona.x0 + Math.random() * (zona.x1 - zona.x0);
+        blanco.ty = zona.y0 + Math.random() * (zona.y1 - zona.y0);
+        const base = 85 + fill * 1.3;
+        const azar = Math.random();
+        blanco.v = azar < 0.22 ? base * 2.1          // arrancón
+                 : azar < 0.4  ? base * 0.55         // se pasea lento
+                 : base;
+        blanco.pausa = Math.random() < 0.16 ? 0.14 + Math.random() * 0.28 : 0;  // frenón en seco
+        blanco.reloj = 0;
+      };
       const pistola = { x: w / 2, y: h - 24 };
 
       let fill = 0, suyo = 0, disparando = false, mira = { x: w / 2, y: h * 0.4 };
@@ -60,10 +75,20 @@ export default (ctx) => {
         const dt = Math.min(0.04, (now - last) / 1000); last = now;
         ondas += dt;
 
-        /* el blanco se pasea, y más rápido cuanto más cerca estés de ganar */
-        blanco.x += blanco.dir * (70 + fill * 1.2) * dt;
-        if(blanco.x < blanco.r + 12){ blanco.x = blanco.r + 12; blanco.dir = 1; }
-        if(blanco.x > w - blanco.r - 12){ blanco.x = w - blanco.r - 12; blanco.dir = -1; }
+        /* el blanco va a su destino, cambia de rumbo, se frena y arranca;
+           y se achica conforme llevas más agua: el final cuesta más */
+        blanco.r = 26 - fill * 0.07;
+        blanco.reloj += dt;
+        if(blanco.pausa > 0) blanco.pausa -= dt;
+        else{
+          const dx = blanco.tx - blanco.x, dy = blanco.ty - blanco.y;
+          const d = Math.hypot(dx, dy);
+          if(d < 10 || blanco.reloj > 1.4) nuevoDestino();
+          else{
+            blanco.x += dx / d * blanco.v * dt;
+            blanco.y += dy / d * blanco.v * dt;
+          }
+        }
 
         /* ¿el chorro atina? línea pistola→mira evaluada a la altura del blanco */
         dando = false;
