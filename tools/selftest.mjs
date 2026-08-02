@@ -57,7 +57,17 @@ class FakeNode {
   fire(ev, arg = { preventDefault(){}, touches:[], changedTouches:[], clientX:10, clientY:10 }){
     (this.handlers[ev] || []).forEach(fn => fn(arg));
   }
-  getContext(){ return new Proxy({}, { get: () => () => {} }); }
+  getContext(){
+    /* lienzo falso universal: cualquier propiedad o llamada devuelve otro
+       igual, así los degradados (createRadialGradient().addColorStop()) y
+       cualquier API futura del canvas no revientan las pruebas */
+    const fake = new Proxy(function(){}, {
+      get: (_, k) => (k === Symbol.toPrimitive ? () => 0 : fake),
+      apply: () => fake,
+      set: () => true,
+    });
+    return fake;
+  }
   /* todos los nodos con click, en orden */
   clickables(out = []){
     if(this.handlers.click?.length && !this.disabled) out.push(this);
@@ -169,11 +179,11 @@ export { playOne, FakeNode };
 /* ---------------------------------------------------------------- runner -- */
 const RUNS = 3;
 const TURN_GAMES = ['gato','conecta4','reversi','damas','domino','escaleras',
-                    'batalla','ludo','ahorcado','basta','trivia','verdadreto','preguntas'];
+                    'batalla','ludo','ahorcado','basta','trivia','verdadreto','preguntas','blackjack'];
 /* Juegos en vivo / de puntería: aquí sólo comprobamos que montan y se
    destruyen sin reventar (el juego en sí depende de canvas y del reloj). */
 const REALTIME = ['pingpong','airhockey','basket','arqueria','ritmo','taprace','globos','pictionary',
-                  'memorama','buscaminas'];   // ahora son carreras, cada quien en su tablero
+                  'memorama','buscaminas','patitos','canicas'];   // carreras y feria, cada quien en su tablero
 
 /* Presupuesto de clics. Damas y Ludo necesitan muchos más porque casi todas
    las casillas son pulsables y el robot pulsa al azar. */
@@ -629,6 +639,6 @@ if(!only){
   }
 }
 
-console.log(fails ? `\n${fails} juego(s) con problemas` : '\n✓ los 23 juegos pasan');
+console.log(fails ? `\n${fails} juego(s) con problemas` : '\n✓ todos los juegos pasan');
 process.exit(fails ? 1 : 0);
 }

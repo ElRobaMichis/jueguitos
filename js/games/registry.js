@@ -13,6 +13,7 @@ export const GAMES = [
   { id:'batalla',    name:'Batalla Naval',   emoji:'🚢', tint:'#22d3ee', tag:'turnos', load:() => import('./batalla.js') },
   { id:'memorama',   name:'Memorama',        emoji:'🃏', tint:'#ff4f9a', tag:'carrera', load:() => import('./memorama.js') },
   { id:'loteria',    name:'Lotería',         emoji:'🎴', tint:'#f2c14e', tag:'azar',   load:() => import('./loteria.js') },
+  { id:'blackjack',  name:'Blackjack',       emoji:'♠️', tint:'#34d399', tag:'cartas', load:() => import('./blackjack.js') },
   { id:'buscaminas', name:'Buscaminas',      emoji:'💣', tint:'#f43f5e', tag:'carrera', load:() => import('./buscaminas.js') },
 
   /* --- palabras y dibujo ---------------------------------------------- */
@@ -33,6 +34,8 @@ export const GAMES = [
   { id:'ritmo',      name:'Ritmo',           emoji:'🎵', tint:'#ff4f9a', tag:'arcade', load:() => import('./ritmo.js') },
   { id:'taprace',    name:'Carrera de Tap',  emoji:'⚡', tint:'#ffd23f', tag:'arcade', load:() => import('./taprace.js') },
   { id:'globos',     name:'Revienta Globos', emoji:'🎈', tint:'#34d399', tag:'arcade', load:() => import('./globos.js') },
+  { id:'patitos',    name:'Patitos al Agua', emoji:'🦆', tint:'#22d3ee', tag:'feria',  load:() => import('./patitos.js') },
+  { id:'canicas',    name:'Canicas',         emoji:'⚪', tint:'#a3e635', tag:'feria',  load:() => import('./canicas.js') },
 ];
 
 export const gameById = (id) => GAMES.find(g => g.id === id);
